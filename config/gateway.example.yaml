@@ -1,0 +1,26 @@
+sip:
+  bindAddress: 0.0.0.0
+  port: 5060
+  transport: UDP
+  ipVersion: IPv4
+  codec: PCMU
+  publicContactAddress: ""
+
+registration:
+  domain: example.com
+  userName: bot-gateway
+  password: ${SIP_REGISTRATION_PASSWORD}
+  sipAddress: sip:bot-gateway@example.com
+  registryServerAddress: registrar.example.com
+  registryServerPort: 5060
+
+openai:
+  apiKey: ${OPENAI_API_KEY}
+  realtimeModel: gpt-realtime
+
+bot:
+  systemInstructions: "あなたは電話応対を行うAIアシスタントです。短く明瞭に回答してください。"
+
+logging:
+  level: INFO
+

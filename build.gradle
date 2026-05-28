@@ -1,0 +1,21 @@
+plugins {
+    id 'application'
+}
+
+group = 'com.example'
+version = '0.1.0-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+application {
+    mainClass = 'com.example.telephonygw.Main'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
