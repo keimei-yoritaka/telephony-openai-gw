@@ -297,3 +297,39 @@ Java `AudioMediaPort`で性能や形式制御が不足した場合、custom PJME
 具体的には、OpenAI API接続はまだ行わず、実通話中にPJSUA2 Java `AudioMediaPort`でRTP由来のaudio frameを観測できるかだけを確認する。
 
 このStep 1が通った後、Step 2以降に進む。
+
+## 10. Step 1 実装内容
+
+Step 1として、以下を実装した。
+
+- `Pjsua2AudioBridgePort`を追加。
+- `Pjsua2AudioBridgePort`はPJSUA2 Javaの`AudioMediaPort`を継承する。
+- port formatはPCM 8 kHz / mono / 16-bit / 20 msとして作成する。
+- `Pjsua2Call.onCallMediaState()`でactiveなaudio mediaを検出する。
+- call側の`AudioMedia`から`Pjsua2AudioBridgePort`へ`startTransmit()`する。
+- `onFrameReceived()`でframe数、byte数、frame type、前回callbackからの経過時間をログ出力する。
+- call切断時に`stopTransmit()`し、bridge portをdeleteする。
+
+この段階では、OpenAI APIへの送信、outbound RTP返送、queue処理はまだ行わない。
+
+期待ログ:
+
+```text
+Attached PJSUA2 audio bridge: callId=..., sessionId=..., mediaIndex=...
+Observed inbound audio frame: sessionId=..., callId=..., frames=1, bytes=..., type=..., deltaMs=0
+Observed inbound audio frame: sessionId=..., callId=..., frames=50, bytes=..., type=..., deltaMs=...
+```
+
+検証手順:
+
+```sh
+scripts/run-pjsua2-local.sh config/gateway.local.yaml
+```
+
+その後、外部SIP端末からINVITEを送り、通話中に発話する。
+
+確認観点:
+
+- `Attached PJSUA2 audio bridge`が出る。
+- `Observed inbound audio frame`が継続的に出る。
+- frame byte数とcallback間隔から、実際のframe形式とptimeを判断する。

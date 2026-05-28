@@ -2,11 +2,15 @@ package com.example.telephonygw.sip;
 
 import com.example.telephonygw.session.CallSessionManager;
 import org.pjsip.pjsua2.Account;
+import org.pjsip.pjsua2.AudioMedia;
 import org.pjsip.pjsua2.Call;
 import org.pjsip.pjsua2.CallInfo;
+import org.pjsip.pjsua2.CallMediaInfo;
 import org.pjsip.pjsua2.OnCallMediaStateParam;
 import org.pjsip.pjsua2.OnCallStateParam;
+import org.pjsip.pjsua2.pjmedia_type;
 import org.pjsip.pjsua2.pjsip_inv_state;
+import org.pjsip.pjsua2.pjsua_call_media_status;
 
 import java.util.Map;
 
@@ -16,6 +20,8 @@ final class Pjsua2Call extends Call {
     private final String sessionId;
     private final Map<Integer, Pjsua2Call> activeCalls;
     private final CallSessionManager sessionManager;
+    private Pjsua2AudioBridgePort audioBridgePort;
+    private AudioMedia callAudioMedia;
 
     Pjsua2Call(
             Account account,
@@ -39,6 +45,7 @@ final class Pjsua2Call extends Call {
                     info.getId(), info.getStateText(), info.getLastStatusCode(), info.getLastReason());
 
             if (info.getState() == pjsip_inv_state.PJSIP_INV_STATE_DISCONNECTED) {
+                closeAudioBridge();
                 activeCalls.remove(info.getId());
                 if (sessionId != null) {
                     sessionManager.closeSession(sessionId, "sip_call_disconnected");
@@ -57,8 +64,61 @@ final class Pjsua2Call extends Call {
             LOG.log(System.Logger.Level.INFO,
                     "SIP call media state changed: callId={0}, mediaCount={1}",
                     info.getId(), info.getMedia().size());
+
+            for (int i = 0; i < info.getMedia().size(); i++) {
+                CallMediaInfo mediaInfo = info.getMedia().get(i);
+                if (mediaInfo.getType() == pjmedia_type.PJMEDIA_TYPE_AUDIO
+                        && mediaInfo.getStatus() == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
+                    attachAudioBridge(i);
+                    return;
+                }
+            }
         } catch (Exception e) {
             LOG.log(System.Logger.Level.WARNING, "Failed to process SIP media state: {0}", e.getMessage());
         }
+    }
+
+    private void attachAudioBridge(int mediaIndex) throws Exception {
+        if (audioBridgePort != null) {
+            return;
+        }
+        if (sessionId == null) {
+            LOG.log(System.Logger.Level.WARNING, "Skipping audio bridge for call without sessionId");
+            return;
+        }
+
+        callAudioMedia = getAudioMedia(mediaIndex);
+        audioBridgePort = new Pjsua2AudioBridgePort(sessionId, getId());
+        callAudioMedia.startTransmit(audioBridgePort);
+        LOG.log(System.Logger.Level.INFO,
+                "Attached PJSUA2 audio bridge: callId={0}, sessionId={1}, mediaIndex={2}",
+                getId(), sessionId, mediaIndex);
+    }
+
+    private void closeAudioBridge() {
+        if (audioBridgePort == null) {
+            return;
+        }
+        try {
+            if (callAudioMedia != null) {
+                callAudioMedia.stopTransmit(audioBridgePort);
+            }
+        } catch (Exception e) {
+            LOG.log(System.Logger.Level.WARNING, "Failed to stop audio bridge transmission: {0}", e.getMessage());
+        }
+
+        long frameCount = audioBridgePort.inboundFrameCount();
+        long elapsedMillis = audioBridgePort.elapsedMillis();
+        try {
+            audioBridgePort.delete();
+        } catch (RuntimeException e) {
+            LOG.log(System.Logger.Level.WARNING, "Failed to delete audio bridge port: {0}", e.getMessage());
+        } finally {
+            audioBridgePort = null;
+            callAudioMedia = null;
+        }
+        LOG.log(System.Logger.Level.INFO,
+                "Closed PJSUA2 audio bridge: callId={0}, sessionId={1}, frames={2}, elapsedMs={3}",
+                getId(), sessionId, frameCount, elapsedMillis);
     }
 }
