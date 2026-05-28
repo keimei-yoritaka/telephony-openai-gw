@@ -14,6 +14,7 @@ public final class GatewayConfigLoader {
         Map<String, String> values = parseSimpleYaml(path);
         GatewayConfig config = new GatewayConfig(
                 new GatewayConfig.SipConfig(
+                        value(values, "sip.backend"),
                         value(values, "sip.bindAddress"),
                         intValue(values, "sip.port"),
                         value(values, "sip.transport"),
@@ -119,4 +120,3 @@ public final class GatewayConfigLoader {
         }
     }
 }
-

@@ -6,11 +6,12 @@ SIP/RTPによる電話音声とOpenAIの音声Botを接続する軽量Gatewayを
 
 ## 現在の状態
 
-- 要件・実装計画を整理中です。
-- GitHub Repositoryは`telephony-openai-gw`としてprivateで管理する予定です。
-- 実装前にPJSUA2 Java bindingでmedia frame accessが可能か技術spikeを行います。
+- 要件・実装計画を整理済みです。
+- GitHub Repositoryは`telephony-openai-gw`としてprivateで管理しています。
 - Javaアプリケーション雛形を作成済みです。
-- 現時点のSIP、media、OpenAI連携はplaceholder実装です。
+- SIP backendは`placeholder`と`pjsua2`を設定で切り替えられます。
+- PJSUA2 backendでは、macOS上でEndpoint起動、UDP/IPv4 SIP transport作成、AccountConfigによるRegistration開始、停止まで確認済みです。
+- 現時点のmedia、OpenAI連携はplaceholder実装です。
 
 ## ローカル確認
 
@@ -39,6 +40,16 @@ scripts/bootstrap-macos-deps.sh
 scripts/build-pjsip-macos.sh
 scripts/check-pjsua2-java.sh
 ```
+
+PJSUA2 backendの起動確認:
+
+```sh
+scripts/run-pjsua2-startup-check.sh
+```
+
+この確認では`config/gateway.pjsua2.example.yaml`を使用します。macOSのサンドボックス環境ではUDP bindに権限許可が必要になる場合があります。
+
+確認時にOpenH264 native libraryが見つからない警告が出る場合があります。PJSUA2 Java bindingの生成コードがvideo codec用libraryの読み込みを試行するためで、本プロジェクトのMVPではvideoを使わないため現時点では無害です。
 
 ## 主要ドキュメント
 

@@ -23,6 +23,10 @@ public final class Main {
         GatewayApp app = new GatewayApp(config);
         Runtime.getRuntime().addShutdownHook(new Thread(app::stop, "gateway-shutdown"));
         app.start();
+        if (containsArg(args, "--startup-check")) {
+            app.stop();
+            return;
+        }
         app.awaitShutdown();
     }
 
@@ -50,4 +54,3 @@ public final class Main {
         return false;
     }
 }
-

@@ -27,17 +27,41 @@ fi
 cd "${ABS_PJPROJECT_DIR}"
 
 cat > pjlib/include/pj/config_site.h <<'CONFIG_SITE'
-#define PJMEDIA_HAS_VIDEO 0
-#define PJMEDIA_HAS_G711_CODEC 1
 #include <pj/config_site_sample.h>
+
+#undef PJMEDIA_HAS_VIDEO
+#define PJMEDIA_HAS_VIDEO 0
+
+#undef PJMEDIA_AUDIO_DEV_HAS_COREAUDIO
+#define PJMEDIA_AUDIO_DEV_HAS_COREAUDIO 0
+
+#undef PJMEDIA_AUDIO_DEV_HAS_NULL_AUDIO
+#define PJMEDIA_AUDIO_DEV_HAS_NULL_AUDIO 1
+
+#undef PJMEDIA_HAS_G711_CODEC
+#define PJMEDIA_HAS_G711_CODEC 1
 CONFIG_SITE
 
-./configure CFLAGS="-fPIC" --prefix="${ABS_PREFIX_DIR}"
+./configure \
+  CFLAGS="-fPIC" \
+  --prefix="${ABS_PREFIX_DIR}" \
+  --disable-sound \
+  --disable-video \
+  --disable-sdl \
+  --disable-ffmpeg \
+  --disable-openh264 \
+  --disable-vpx
 make dep
+if [ "${PJSIP_CLEAN:-0}" = "1" ]; then
+  make clean
+fi
 make
 make install
 
 cd pjsip-apps/src/swig/java
+if [ "${PJSIP_CLEAN:-0}" = "1" ]; then
+  make clean
+fi
 make
 make install
 

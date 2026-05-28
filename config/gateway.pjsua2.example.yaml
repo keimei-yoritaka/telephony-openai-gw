@@ -1,5 +1,5 @@
 sip:
-  backend: placeholder
+  backend: pjsua2
   bindAddress: 0.0.0.0
   port: 5060
   transport: UDP
@@ -24,3 +24,4 @@ bot:
 
 logging:
   level: INFO
+

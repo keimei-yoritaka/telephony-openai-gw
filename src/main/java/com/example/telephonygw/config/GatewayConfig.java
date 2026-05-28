@@ -8,6 +8,7 @@ public record GatewayConfig(
         LoggingConfig logging
 ) {
     public record SipConfig(
+            String backend,
             String bindAddress,
             int port,
             String transport,
@@ -16,6 +17,10 @@ public record GatewayConfig(
             String publicContactAddress
     ) {
         public void validate() {
+            require("sip.backend", backend);
+            if (!"placeholder".equalsIgnoreCase(backend) && !"pjsua2".equalsIgnoreCase(backend)) {
+                throw new IllegalArgumentException("sip.backend must be placeholder or pjsua2: " + backend);
+            }
             require("sip.bindAddress", bindAddress);
             requireRange("sip.port", port, 1, 65535);
             requireEquals("sip.transport", transport, "UDP");
@@ -88,4 +93,3 @@ public record GatewayConfig(
         }
     }
 }
-

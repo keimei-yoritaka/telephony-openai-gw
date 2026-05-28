@@ -265,14 +265,18 @@ PJSIPはGPLおよび商用licenseの選択肢がある。production利用前に�
 ├── build.gradle
 ├── settings.gradle
 ├── config
-│   └── gateway.example.yaml
+│   ├── gateway.example.yaml
+│   └── gateway.pjsua2.example.yaml
 ├── native
 │   ├── macos
 │   └── rhel
 ├── scripts
 │   ├── build-pjsip-macos.sh
 │   ├── build-pjsip-rhel.sh
+│   ├── check-config.sh
+│   ├── check-pjsua2-java.sh
 │   ├── run-local.sh
+│   ├── run-pjsua2-startup-check.sh
 │   └── package-rhel.sh
 ├── src
 │   ├── main
@@ -331,6 +335,14 @@ PJSIPはGPLおよび商用licenseの選択肢がある。production利用前に�
 - 通話に応答する。
 - media establishmentを確認する。
 - inbound/outbound audio frameへのアクセス方法を検証する。
+
+現在の進捗:
+
+- macOSでPJSIP 2.17およびPJSUA2 Java bindingをbuild済み。
+- Gateway内にPJSUA2 backendを追加済み。
+- `sip.backend: pjsua2`で、Endpoint起動、UDP/IPv4 SIP transport作成、PCMU優先度設定、Registration開始、停止まで確認済み。
+- `config/gateway.pjsua2.example.yaml`を追加済み。
+- `scripts/run-pjsua2-startup-check.sh`を追加済み。
 
 完了条件:
 

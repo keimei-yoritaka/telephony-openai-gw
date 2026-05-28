@@ -41,6 +41,12 @@ PJSIP/PJSUA2 Java binding build:
 scripts/build-pjsip-macos.sh
 ```
 
+PJSIP本体とSWIG Java bindingをクリーン再生成する場合:
+
+```sh
+PJSIP_CLEAN=1 scripts/build-pjsip-macos.sh
+```
+
 versionを変更する場合:
 
 ```sh
@@ -52,7 +58,8 @@ PJSIP_VERSION=2.17 scripts/build-pjsip-macos.sh
 - PJSIP tagは`2.17`を初期対象とする。
 - SIP/RTPはUDP/IPv4を前提とする。
 - codecはPCMU前提とする。
-- video機能は不要なため無効化する。
+- Gateway用途ではmacOSの実音声デバイスを使わないため、PJSIPはnull audio構成でbuildする。
+- video、SDL、FFmpeg、OpenH264、VPXは不要なため無効化する。
 - native成果物は`.deps/`配下に置き、Repositoryには含めない。
 
 ## Phase 0の確認項目
@@ -71,22 +78,29 @@ PJSIP_VERSION=2.17 scripts/build-pjsip-macos.sh
 - Homebrewは利用可能。
 - SWIG 4.4.1をHomebrewで導入済み。
 - PJSIP 2.17のsourceを`.deps/pjproject`へ取得済み。
-- PJSIP 2.17を`-fPIC`付きでbuild済み。
+- PJSIP 2.17を`-fPIC`、null audio、video無効構成でbuild済み。
 - PJSUA2 Java bindingをbuild済み。
 - `libpjsua2.jnilib`は`.deps/pjproject/pjsip-apps/src/swig/java/output`に生成済み。
 - JavaからPJSUA2生成classを読み込めることを確認済み。
+- GatewayアプリケーションからPJSUA2 Endpointを生成し、`libCreate()`、`libInit()`、UDP/IPv4 transport作成、`libStart()`を実行できることを確認済み。
+- `AccountConfig`に設定ファイル由来のRegistration情報を設定し、SIP Registration開始まで実行できることを確認済み。
+- `sip.backend`により、通常のplaceholder backendとPJSUA2 backendを切り替えられる。
 
 確認command:
 
 ```sh
 scripts/check-pjsua2-java.sh
+scripts/run-pjsua2-startup-check.sh
 ```
 
 確認時の出力では、OpenH264 native libraryが見つからない旨の警告が出る場合がある。これはvideo codec用の警告であり、本プロジェクトのMVPではvideoを利用しないため、現時点では問題として扱わない。
 
+`scripts/run-pjsua2-startup-check.sh`では、`config/gateway.pjsua2.example.yaml`を使う。このexampleは`registrar.example.com`を指定しているため、実Registration成功ではなく、Account作成とRegistration送信開始までの確認を目的とする。実Registrarでの成功確認には、実際のDomain、User Name、Password、SIP Address、Registry Server address、Registry Server portを設定した別configを用意する。
+
+macOSのサンドボックス環境では、UDP SIP transportのbindが`Operation not permitted`で失敗する場合がある。その場合は、権限許可された実行環境で同じscriptを実行する。
+
 ## 次の確認事項
 
-- 本アプリケーション側からPJSUA2 Java bindingをoptional dependencyとして参照する構成を作る。
-- `Endpoint`の生成、`libCreate()`、UDP/IPv4 transport作成、`libStart()`までをGateway内のadapterとして実装する。
-- 実credentialを使わずに、設定値から`AccountConfig`を組み立てられることを確認する。
 - 実SIP環境またはlocal SIP serverを用意し、Registration結果を確認する。
+- inbound INVITE callbackを受け、Java側のcall sessionへ接続する。
+- PCMU media pathへのin-memory frame access方法を確認する。

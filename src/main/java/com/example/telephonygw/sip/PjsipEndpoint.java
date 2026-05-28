@@ -7,14 +7,50 @@ import com.example.telephonygw.session.CallSessionManager;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class PjsipEndpoint {
-    private static final System.Logger LOG = System.getLogger(PjsipEndpoint.class.getName());
+    private final SipEndpointAdapter adapter;
+
+    public PjsipEndpoint(
+            SipConfig sipConfig,
+            RegistrationConfig registrationConfig,
+            CallSessionManager sessionManager
+    ) {
+        if ("pjsua2".equalsIgnoreCase(sipConfig.backend())) {
+            this.adapter = new Pjsua2SipEndpoint(sipConfig, registrationConfig, sessionManager);
+        } else {
+            this.adapter = new PlaceholderSipEndpoint(sipConfig, registrationConfig, sessionManager);
+        }
+    }
+
+    public void start() {
+        adapter.start();
+    }
+
+    public void register() {
+        adapter.register();
+    }
+
+    public void stop() {
+        adapter.stop();
+    }
+}
+
+interface SipEndpointAdapter {
+    void start();
+
+    void register();
+
+    void stop();
+}
+
+final class PlaceholderSipEndpoint implements SipEndpointAdapter {
+    private static final System.Logger LOG = System.getLogger(PlaceholderSipEndpoint.class.getName());
 
     private final SipConfig sipConfig;
     private final RegistrationConfig registrationConfig;
     private final CallSessionManager sessionManager;
     private final AtomicBoolean started = new AtomicBoolean(false);
 
-    public PjsipEndpoint(
+    PlaceholderSipEndpoint(
             SipConfig sipConfig,
             RegistrationConfig registrationConfig,
             CallSessionManager sessionManager
@@ -24,6 +60,7 @@ public final class PjsipEndpoint {
         this.sessionManager = sessionManager;
     }
 
+    @Override
     public void start() {
         if (!started.compareAndSet(false, true)) {
             return;
@@ -36,6 +73,7 @@ public final class PjsipEndpoint {
                 "Codec policy is fixed to {0}", sipConfig.codec());
     }
 
+    @Override
     public void register() {
         ensureStarted();
         LOG.log(System.Logger.Level.INFO,
@@ -48,6 +86,7 @@ public final class PjsipEndpoint {
                 "SIP Registration is placeholder until PJSUA2 Java binding is wired");
     }
 
+    @Override
     public void stop() {
         if (!started.compareAndSet(true, false)) {
             return;
@@ -62,4 +101,3 @@ public final class PjsipEndpoint {
         }
     }
 }
-
