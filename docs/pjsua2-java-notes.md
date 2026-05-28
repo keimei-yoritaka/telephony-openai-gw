@@ -93,6 +93,14 @@ scripts/check-pjsua2-java.sh
 scripts/run-pjsua2-startup-check.sh
 ```
 
+外部INVITEを待ち受ける通常起動:
+
+```sh
+scripts/run-pjsua2-local.sh config/gateway.local.yaml
+```
+
+`scripts/run-pjsua2-startup-check.sh`は起動確認用であり、`--startup-check`によりRegistration開始後に停止する。継続待受を行う場合は`run-pjsua2-local.sh`を利用する。
+
 確認時の出力では、OpenH264 native libraryが見つからない旨の警告が出る場合がある。これはvideo codec用の警告であり、本プロジェクトのMVPではvideoを利用しないため、現時点では問題として扱わない。
 
 `scripts/run-pjsua2-startup-check.sh`では、`config/gateway.pjsua2.example.yaml`を使う。このexampleは`registrar.example.com`を指定しているため、実Registration成功ではなく、Account作成とRegistration送信開始までの確認を目的とする。実Registrarでの成功確認には、実際のDomain、User Name、Password、SIP Address、Registry Server address、Registry Server portを設定した別configを用意する。

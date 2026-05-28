@@ -49,6 +49,14 @@ scripts/run-pjsua2-startup-check.sh
 
 この確認では`config/gateway.pjsua2.example.yaml`を使用します。macOSのサンドボックス環境ではUDP bindに権限許可が必要になる場合があります。
 
+PJSUA2 backendで外部INVITEを待ち受ける通常起動:
+
+```sh
+scripts/run-pjsua2-local.sh config/gateway.local.yaml
+```
+
+`run-pjsua2-startup-check.sh`は起動確認用のため、Registration開始後に停止する。INVITEを待ち受ける場合は`run-pjsua2-local.sh`を利用する。
+
 確認時にOpenH264 native libraryが見つからない警告が出る場合があります。PJSUA2 Java bindingの生成コードがvideo codec用libraryの読み込みを試行するためで、本プロジェクトのMVPではvideoを使わないため現時点では無害です。
 
 ## 主要ドキュメント
