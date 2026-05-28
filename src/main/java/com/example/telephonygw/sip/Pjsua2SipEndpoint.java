@@ -74,7 +74,7 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
         ensureStarted();
         try {
             Object accountConfig = buildAccountConfig();
-            account = newInstance("org.pjsip.pjsua2.Account");
+            account = newAccount();
             invoke(account, "create", accountConfig, true);
 
             LOG.log(System.Logger.Level.INFO,
@@ -124,6 +124,18 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
         invoke(authCreds, "add", credential);
 
         return accountConfig;
+    }
+
+    private Object newAccount() throws ReflectiveOperationException {
+        try {
+            Constructor<?> constructor = clazz("com.example.telephonygw.sip.Pjsua2Account")
+                    .getConstructor(CallSessionManager.class);
+            return constructor.newInstance(sessionManager);
+        } catch (ClassNotFoundException e) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "PJSUA2 account callback class is not available. Incoming INVITE may be rejected by PJSIP.");
+            return newInstance("org.pjsip.pjsua2.Account");
+        }
     }
 
     private Object newAuthCredential() throws ReflectiveOperationException {
