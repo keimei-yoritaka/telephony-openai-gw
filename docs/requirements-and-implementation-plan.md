@@ -512,6 +512,13 @@ PJSIPはGPLおよび商用licenseの選択肢がある。production利用前に�
 
 本プロジェクトはGitHub Repositoryで継続管理する。
 
+Repository情報:
+
+- Repository名: `telephony-openai-gw`
+- Repository URL: `https://github.com/keimei-yoritaka/telephony-openai-gw`
+- 公開範囲: private
+- default branch: `main`
+
 初期方針:
 
 - ソースコード、設計文書、設定例、build script、deployment notesをRepositoryで管理する。
@@ -576,8 +583,5 @@ PJSIPはGPLおよび商用licenseの選択肢がある。production利用前に�
 - 録音、ログ、PIIに関するcompliance要件はあるか。
 - 対象RHEL versionは固定されているか。
 - closed-source commercial distributionを想定するか。
-- GitHub Repository名は何にするか。
-- GitHub Repositoryはprivate/publicのどちらにするか。
-- default branch名は`main`でよいか。
 - branch運用は直接`main`へcommitするか、feature branchとPull Requestを使うか。
 - GitHub ActionsによるCIを初期段階から利用するか。
