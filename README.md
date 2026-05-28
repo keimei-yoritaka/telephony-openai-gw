@@ -63,4 +63,5 @@ scripts/run-pjsua2-local.sh config/gateway.local.yaml
 
 - [要件・実装計画](docs/requirements-and-implementation-plan.md)
 - [PJSUA2 Java Binding 調査メモ](docs/pjsua2-java-notes.md)
+- [RTP / OpenAI 音声ブリッジ実装計画](docs/rtp-media-bridge-implementation-plan.md)
 - [Agent向け指示](AGENTS.md)

@@ -1,0 +1,299 @@
+# RTP / OpenAI 音声ブリッジ実装計画
+
+## 1. 目的
+
+SIP呼制御は、実SIP環境でRegistration、INVITE受信、200 OK応答、1コールの成立まで確認できた。
+
+次の段階では、RTP音声をアプリケーション内で取り出し、OpenAI Realtime APIへ転送し、OpenAIから返却される音声をRTP側へ返送する。
+
+この文書は、実装前の承認用計画として作成する。承認後に、ここで定義した順序で実装を進める。
+
+## 2. 現時点の前提
+
+- SIP/RTPはUDP/IPv4。
+- SIP側codecはPCMU固定。
+- アプリケーション本体はJava。
+- PJSIP/PJSUA2 Java bindingはmacOSでbuild済み。
+- PJSUA2 Java callbackでINVITEを受け、`Call`を生成し、200 OKを返せる。
+- `AudioBridge`と`RealtimeClient`は現時点ではplaceholder。
+- OpenAI連携はRealtime APIを前提とする。
+
+## 3. 調査結果
+
+### 3.1 PJSUA2 Java media API
+
+PJSUA2 Java bindingには以下のAPIが存在する。
+
+- `AudioMedia`
+- `AudioMediaPort`
+- `AudioMediaPlayer`
+- `AudioMediaRecorder`
+- `AudioMediaAiPort`
+- `MediaFrame`
+- `MediaFormatAudio`
+
+特に`AudioMediaPort`は以下をoverrideできる。
+
+- `onFrameReceived(MediaFrame frame)`
+- `onFrameRequested(MediaFrame frame)`
+
+このため、第一候補として、PJSUA2 conference bridge上にJava実装の`AudioMediaPort`を作成し、通話の`AudioMedia`と接続する。
+
+想定接続:
+
+```text
+Caller RTP -> PJSIP media stream -> Call AudioMedia -> Java AudioMediaPort -> OpenAI input queue
+OpenAI output queue -> Java AudioMediaPort -> Call AudioMedia -> PJSIP media stream -> Caller RTP
+```
+
+### 3.2 OpenAI Realtime API
+
+OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由では`input_audio_buffer.append`でBase64化した音声chunkを送信する。音声の入力形式はRealtime sessionで設定する。
+
+公式document上、Realtime系APIではG.711 μ-law相当の形式も扱えるため、将来的にはPCMU passthroughを狙える。ただし、PJSUA2の`AudioMediaPort`から得られるframeはconference bridgeのaudio frameであり、RTP payloadそのものではなくPCM系frameになる可能性が高い。
+
+参照:
+
+- [Realtime conversations - OpenAI API](https://platform.openai.com/docs/guides/realtime-model-capabilities)
+- [Realtime transcription - OpenAI API](https://platform.openai.com/docs/guides/realtime-transcription)
+- [Realtime API Reference - OpenAI API](https://platform.openai.com/docs/api-reference/realtime)
+
+## 4. 実装方針
+
+### 4.1 第一候補: PJSUA2 AudioMediaPort方式
+
+まず、PJSUA2 Javaの`AudioMediaPort`を利用する。
+
+理由:
+
+- Java側だけで実装を進められる。
+- 既存のPJSUA2 Java bindingに含まれている。
+- custom PJMEDIA C/C++ portを追加する前に、最小の実装で音声frame accessを検証できる。
+- 本プロジェクトの「アプリケーション本体をC/C++で書かない」方針に沿う。
+
+想定する初期音声形式:
+
+- PJSIP側: PCMU negotiated。
+- Java AudioMediaPort側: PCM 8 kHz / mono / 16-bit / 20 ms frameを第一候補として検証。
+- OpenAI側: まず`pcm16`で送受信する。必要に応じて24 kHz resamplingを追加する。
+
+注意:
+
+- この方式ではPCMU passthroughではなく、PJSIP内でdecodeされたPCMを扱う可能性がある。
+- OpenAI側で`g711_ulaw`を使う場合、RTP payloadに近いPCMU byte列を取り出す経路が必要になる可能性がある。
+- まずは「音声が双方向に流れる」ことを優先し、passthrough最適化は後続に回す。
+
+### 4.2 第二候補: custom PJMEDIA port方式
+
+`AudioMediaPort`で十分な性能、形式制御、双方向pacingが得られない場合、custom PJMEDIA portを追加する。
+
+この場合も、C/C++実装範囲は最小限に隔離する。
+
+候補:
+
+- native側でPJMEDIA portを作成する。
+- Javaからqueueへframeを渡すJNI/SWIG面を最小限公開する。
+- Javaアプリケーション本体の責務は変えない。
+
+### 4.3 今回は採用しない方針
+
+通常のstreaming pathでは、以下を採用しない。
+
+- WAV recorder/playerによるfile経由連携。
+- 外部プロセスを挟む音声変換。
+- RTP stackの自前実装。
+
+ただし、診断用途として短時間の録音file出力は許容する。
+
+## 5. 実装ステップ
+
+### Step 1: Media frame観測spike
+
+目的:
+
+- `AudioMediaPort.onFrameReceived()`が実通話中に呼ばれるか確認する。
+- frame size、format、callback周期をログで確認する。
+- `onCallMediaState()`でcall audio mediaを取得し、Java portへ接続できるか確認する。
+
+作業:
+
+- `Pjsua2AudioBridgePort`を追加する。
+- `Pjsua2Call.onCallMediaState()`で`getAudioMedia()`を取得する。
+- caller audio mediaからbridge portへ`startTransmit()`する。
+- 受信frame count、byte数、推定ptimeをログ出力する。
+- 初期段階では音声をOpenAIへ送らない。
+
+完了条件:
+
+- 実SIP callで`onFrameReceived()`が継続的に呼ばれる。
+- 20 ms相当の周期でframeが観測できる。
+- frame sizeからPCM形式の仮説を立てられる。
+
+### Step 2: RTP入力からアプリケーションqueueへ接続
+
+目的:
+
+- 発信者音声をapplication-level queueへ渡す。
+
+作業:
+
+- `AudioFrame`を実用途向けに拡張する。
+- `AudioQueue`またはbounded queueを追加する。
+- session ID、方向、timestamp、payload formatを持つframeを定義する。
+- queue上限とdrop policyを定義する。
+- frame count、drop count、queue depthをログ出力する。
+
+完了条件:
+
+- 発信者音声frameがJava queueへ流れる。
+- queue overflow時にprocessが落ちず、dropが観測できる。
+
+### Step 3: OpenAI Realtime送信
+
+目的:
+
+- 発信者音声をOpenAI Realtime APIへstreamingする。
+
+作業:
+
+- Java標準または既存方針に沿うWebSocket clientを選定する。
+- Realtime sessionを作成し、音声input/output形式を設定する。
+- input queueから音声chunkをBase64化し、`input_audio_buffer.append`相当のeventとして送信する。
+- VADは初期はserver側を利用する。
+- session start、updated、speech_started、speech_stopped、errorをログ出力する。
+
+完了条件:
+
+- 実通話中の発話に対して、OpenAI側でinput audio eventが受理される。
+- API error時にcall sessionへerror理由を記録できる。
+
+### Step 4: OpenAI音声出力からRTP返送
+
+目的:
+
+- OpenAIの音声レスポンスを発信者へ返送する。
+
+作業:
+
+- Realtime server eventからoutput audio deltaを受信する。
+- audio deltaをoutbound queueへ積む。
+- `AudioMediaPort.onFrameRequested()`でoutbound queueからframeを取り出し、PJSIPへ渡す。
+- queue underrun時は無音frameを返す。
+- 必要に応じてresamplingまたはformat変換を追加する。
+
+完了条件:
+
+- 発信者がOpenAIの音声レスポンスを聞ける。
+- outbound queue underrun/dropがログで観測できる。
+
+### Step 5: PCMU最適化
+
+目的:
+
+- latencyと変換コストを下げる。
+
+作業:
+
+- OpenAI側で`g711_ulaw`を使う場合のsession設定を検証する。
+- PJSUA2 AudioMediaPortでPCMU payloadを直接扱えない場合、custom PJMEDIA portまたはcodec hookが必要か判断する。
+- PCM16 pathとPCMU pathのlatency、音質、実装複雑度を比較する。
+
+完了条件:
+
+- MVPではPCM16 pathを継続するか、PCMU pathへ切り替えるか判断できる。
+
+## 6. 追加・変更予定ファイル
+
+想定:
+
+```text
+src/main/java/com/example/telephonygw/media/
+  AudioBridge.java
+  AudioFrame.java
+  AudioQueue.java
+  AudioFormat.java
+  PcmuCodec.java
+  Resampler.java
+
+src/main/java/com/example/telephonygw/openai/
+  RealtimeClient.java
+  RealtimeSession.java
+  RealtimeEvent.java
+  RealtimeWebSocketClient.java
+
+src/pjsua2/java/com/example/telephonygw/sip/
+  Pjsua2AudioBridgePort.java
+  Pjsua2Call.java
+```
+
+必要に応じて追加:
+
+```text
+native/
+  pjmedia-bridge/
+```
+
+ただし、native追加は`AudioMediaPort`方式で不足が確認された場合のみ行う。
+
+## 7. 検証計画
+
+### 7.1 ローカル起動
+
+```sh
+scripts/run-pjsua2-local.sh config/gateway.local.yaml
+```
+
+### 7.2 SIP call検証
+
+- 外部SIP端末からINVITEを送る。
+- 200 OKで応答されることを確認する。
+- `onCallMediaState()`が呼ばれることを確認する。
+- `onFrameReceived()`のframe countが増えることを確認する。
+
+### 7.3 音声入力検証
+
+- 発話中にinbound frame countが増える。
+- 無音時にもRTP/media frameが来る場合、その扱いをログで確認する。
+- 20 ms packet前提に対してframe sizeが妥当か確認する。
+
+### 7.4 OpenAI接続検証
+
+- Realtime sessionが作成される。
+- audio append eventが送信される。
+- response audio deltaが返る。
+- call終了時にRealtime sessionが閉じられる。
+
+### 7.5 双方向音声検証
+
+- 発信者がBot音声を聞ける。
+- 連続発話、割り込み、無音、切断時にprocessが落ちない。
+
+## 8. リスクと判断ポイント
+
+### 8.1 AudioMediaPortのframe形式
+
+`AudioMediaPort`がPCM frameを渡す場合、OpenAIへ`g711_ulaw` passthroughできない。MVPではPCM16 pathを許容し、後で最適化する。
+
+### 8.2 sample rate mismatch
+
+PJSIP側はPCMU 8 kHzで、OpenAI側の音声形式設定によっては24 kHz PCMが必要になる可能性がある。この場合、resamplingが必要になる。
+
+### 8.3 callback threadでの重い処理
+
+PJSIP media callback内でWebSocket送信や重い変換を行うと、音声途切れの原因になる。callbackではqueue投入またはqueue取得だけに限定する。
+
+### 8.4 backpressure
+
+OpenAI WebSocket、RTP pacing、ネットワーク状態がずれるとqueueが詰まる。bounded queueとdrop policyを初期から入れる。
+
+### 8.5 native実装への移行
+
+Java `AudioMediaPort`で性能や形式制御が不足した場合、custom PJMEDIA portが必要になる。この判断はStep 1からStep 4の結果で行う。
+
+## 9. 承認後の最初の実装範囲
+
+承認後、最初に実装する範囲はStep 1に限定する。
+
+具体的には、OpenAI API接続はまだ行わず、実通話中にPJSUA2 Java `AudioMediaPort`でRTP由来のaudio frameを観測できるかだけを確認する。
+
+このStep 1が通った後、Step 2以降に進む。
