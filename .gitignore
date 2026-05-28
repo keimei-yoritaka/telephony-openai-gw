@@ -1,0 +1,45 @@
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+
+# Java / Gradle build outputs
+.gradle/
+build/
+out/
+target/
+*.class
+*.jar
+*.war
+
+# Native build outputs
+native/**/build/
+native/**/*.a
+native/**/*.so
+native/**/*.dylib
+native/**/*.dll
+native/**/*.jnilib
+
+# Logs and runtime files
+*.log
+logs/
+tmp/
+*.pid
+
+# Packet captures and call artifacts
+*.pcap
+*.pcapng
+recordings/
+transcripts/
+
+# IDE / OS local files
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
