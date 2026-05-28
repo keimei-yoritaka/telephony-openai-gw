@@ -18,6 +18,7 @@ target/
 *.war
 
 # Native build outputs
+.deps/
 native/**/build/
 native/**/*.a
 native/**/*.so
@@ -42,4 +43,3 @@ transcripts/
 .idea/
 .vscode/
 *.iml
-

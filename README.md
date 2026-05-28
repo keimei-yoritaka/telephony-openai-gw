@@ -32,7 +32,16 @@ scripts/run-local.sh
 
 現時点ではPJSUA2 Java bindingをまだ組み込んでいないため、SIP RegistrationやOpenAI Realtime接続は実際には行わず、placeholderとしてログ出力します。
 
+PJSUA2 Java bindingのbuild確認:
+
+```sh
+scripts/bootstrap-macos-deps.sh
+scripts/build-pjsip-macos.sh
+scripts/check-pjsua2-java.sh
+```
+
 ## 主要ドキュメント
 
 - [要件・実装計画](docs/requirements-and-implementation-plan.md)
+- [PJSUA2 Java Binding 調査メモ](docs/pjsua2-java-notes.md)
 - [Agent向け指示](AGENTS.md)
