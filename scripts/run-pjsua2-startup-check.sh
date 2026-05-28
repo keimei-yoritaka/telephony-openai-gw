@@ -10,6 +10,16 @@ if [ ! -f "${PJSUA2_OUTPUT_DIR}/libpjsua2.jnilib" ]; then
   exit 1
 fi
 
+if ! awk '
+  $1 == "sip:" { in_sip = 1; next }
+  /^[^[:space:]]/ { in_sip = 0 }
+  in_sip && $1 == "backend:" && tolower($2) == "pjsua2" { found = 1 }
+  END { exit found ? 0 : 1 }
+' "${CONFIG_PATH}"; then
+  echo "PJSUA2起動確認には sip.backend: pjsua2 の設定ファイルを指定してください: ${CONFIG_PATH}" >&2
+  exit 1
+fi
+
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
 find src/main/java -name '*.java' > build/sources.list
@@ -21,4 +31,3 @@ exec java \
   com.example.telephonygw.Main \
   --config "${CONFIG_PATH}" \
   --startup-check
-
