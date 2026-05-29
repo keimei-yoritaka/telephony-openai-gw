@@ -333,3 +333,45 @@ scripts/run-pjsua2-local.sh config/gateway.local.yaml
 - `Attached PJSUA2 audio bridge`が出る。
 - `Observed inbound audio frame`が継続的に出る。
 - frame byte数とcallback間隔から、実際のframe形式とptimeを判断する。
+
+## 11. Step 2 実装内容
+
+Step 2として、PJSUA2 `AudioMediaPort`で観測したinbound audio frameを、アプリケーション内のbounded queueへ投入する処理を実装した。
+
+追加・変更内容:
+
+- `AudioFrame`を拡張し、以下を保持するようにした。
+  - session ID。
+  - 音声方向。現時点では`INBOUND`のみ利用。
+  - sequence number。
+  - payload。
+  - codec。
+  - sample rate。
+  - duration。
+  - capture timestamp。
+- `AudioQueue`を追加し、`ArrayBlockingQueue`ベースのbounded queueを実装した。
+- `AudioBridge`にinbound queueを追加した。
+- `AudioBridge.enqueueInboundPcm16()`を追加し、media callbackからqueueへframeを投入できるようにした。
+- queueが満杯の場合はframeをdropし、drop数をログ出力する。
+- `Pjsua2AudioBridgePort.onFrameReceived()`ではpayload copyとqueue投入だけを行う。
+- 既存のframe観測ログにqueue depthを追加した。
+
+現時点の形式仮定:
+
+- `AudioMediaPort`側はPCM 8 kHz / mono / 16-bit / 20 ms。
+- queue上のcodec表現は`pcm16`。
+- OpenAI API送信はまだ行わない。
+
+期待ログ:
+
+```text
+Audio queue accepted frame: queue=inbound, offered=1, dropped=0, depth=1
+Observed inbound audio frame: sessionId=..., callId=..., frames=50, bytes=..., type=..., deltaMs=..., queueDepth=...
+```
+
+確認観点:
+
+- 通話中に`Audio queue accepted frame`が出る。
+- queue depthが増える。
+- OpenAI送信側が未実装のため、長時間通話ではqueueが満杯になりdrop logが出る可能性がある。
+- dropが出てもprocessが落ちない。

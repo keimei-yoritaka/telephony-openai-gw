@@ -25,7 +25,7 @@ public final class GatewayApp {
         this.sessionManager = new CallSessionManager();
         this.audioBridge = new AudioBridge();
         this.realtimeClient = new RealtimeClient(config.openAi());
-        this.sipEndpoint = new PjsipEndpoint(config.sip(), config.registration(), sessionManager);
+        this.sipEndpoint = new PjsipEndpoint(config.sip(), config.registration(), sessionManager, audioBridge);
     }
 
     public void start() {
@@ -63,4 +63,3 @@ public final class GatewayApp {
         shutdownLatch.await();
     }
 }
-

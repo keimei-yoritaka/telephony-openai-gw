@@ -2,6 +2,7 @@ package com.example.telephonygw.sip;
 
 import com.example.telephonygw.session.CallSession;
 import com.example.telephonygw.session.CallSessionManager;
+import com.example.telephonygw.media.AudioBridge;
 import org.pjsip.pjsua2.Account;
 import org.pjsip.pjsua2.CallOpParam;
 import org.pjsip.pjsua2.OnIncomingCallParam;
@@ -15,11 +16,13 @@ public final class Pjsua2Account extends Account {
     private static final System.Logger LOG = System.getLogger(Pjsua2Account.class.getName());
 
     private final CallSessionManager sessionManager;
+    private final AudioBridge audioBridge;
     private final Map<Integer, Pjsua2Call> activeCalls = new ConcurrentHashMap<>();
 
-    public Pjsua2Account(CallSessionManager sessionManager) {
+    public Pjsua2Account(CallSessionManager sessionManager, AudioBridge audioBridge) {
         super();
         this.sessionManager = sessionManager;
+        this.audioBridge = audioBridge;
     }
 
     @Override
@@ -40,7 +43,7 @@ public final class Pjsua2Account extends Account {
         }
 
         CallSession session = sessionManager.createSession();
-        Pjsua2Call call = new Pjsua2Call(this, callId, session.sessionId(), activeCalls, sessionManager);
+        Pjsua2Call call = new Pjsua2Call(this, callId, session.sessionId(), activeCalls, sessionManager, audioBridge);
         activeCalls.put(callId, call);
 
         try {
@@ -58,7 +61,7 @@ public final class Pjsua2Account extends Account {
     }
 
     private void answerBusy(int callId) {
-        Pjsua2Call call = new Pjsua2Call(this, callId, null, activeCalls, sessionManager);
+        Pjsua2Call call = new Pjsua2Call(this, callId, null, activeCalls, sessionManager, audioBridge);
         try {
             CallOpParam answer = new CallOpParam(true);
             answer.setStatusCode(pjsip_status_code.PJSIP_SC_BUSY_HERE);

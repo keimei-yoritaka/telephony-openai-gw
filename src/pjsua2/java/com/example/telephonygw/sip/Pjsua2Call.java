@@ -1,5 +1,6 @@
 package com.example.telephonygw.sip;
 
+import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.session.CallSessionManager;
 import org.pjsip.pjsua2.Account;
 import org.pjsip.pjsua2.AudioMedia;
@@ -20,6 +21,7 @@ final class Pjsua2Call extends Call {
     private final String sessionId;
     private final Map<Integer, Pjsua2Call> activeCalls;
     private final CallSessionManager sessionManager;
+    private final AudioBridge audioBridge;
     private Pjsua2AudioBridgePort audioBridgePort;
     private AudioMedia callAudioMedia;
 
@@ -28,12 +30,14 @@ final class Pjsua2Call extends Call {
             int callId,
             String sessionId,
             Map<Integer, Pjsua2Call> activeCalls,
-            CallSessionManager sessionManager
+            CallSessionManager sessionManager,
+            AudioBridge audioBridge
     ) {
         super(account, callId);
         this.sessionId = sessionId;
         this.activeCalls = activeCalls;
         this.sessionManager = sessionManager;
+        this.audioBridge = audioBridge;
     }
 
     @Override
@@ -88,7 +92,7 @@ final class Pjsua2Call extends Call {
         }
 
         callAudioMedia = getAudioMedia(mediaIndex);
-        audioBridgePort = new Pjsua2AudioBridgePort(sessionId, getId());
+        audioBridgePort = new Pjsua2AudioBridgePort(sessionId, getId(), audioBridge);
         callAudioMedia.startTransmit(audioBridgePort);
         LOG.log(System.Logger.Level.INFO,
                 "Attached PJSUA2 audio bridge: callId={0}, sessionId={1}, mediaIndex={2}",

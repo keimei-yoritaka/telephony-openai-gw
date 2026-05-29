@@ -2,6 +2,7 @@ package com.example.telephonygw.sip;
 
 import com.example.telephonygw.config.GatewayConfig.RegistrationConfig;
 import com.example.telephonygw.config.GatewayConfig.SipConfig;
+import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.session.CallSessionManager;
 
 import java.lang.reflect.Constructor;
@@ -15,6 +16,7 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
     private final SipConfig sipConfig;
     private final RegistrationConfig registrationConfig;
     private final CallSessionManager sessionManager;
+    private final AudioBridge audioBridge;
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean eventsRunning = new AtomicBoolean(false);
 
@@ -26,11 +28,13 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
     Pjsua2SipEndpoint(
             SipConfig sipConfig,
             RegistrationConfig registrationConfig,
-            CallSessionManager sessionManager
+            CallSessionManager sessionManager,
+            AudioBridge audioBridge
     ) {
         this.sipConfig = sipConfig;
         this.registrationConfig = registrationConfig;
         this.sessionManager = sessionManager;
+        this.audioBridge = audioBridge;
     }
 
     @Override
@@ -129,8 +133,8 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
     private Object newAccount() throws ReflectiveOperationException {
         try {
             Constructor<?> constructor = clazz("com.example.telephonygw.sip.Pjsua2Account")
-                    .getConstructor(CallSessionManager.class);
-            return constructor.newInstance(sessionManager);
+                    .getConstructor(CallSessionManager.class, AudioBridge.class);
+            return constructor.newInstance(sessionManager, audioBridge);
         } catch (ClassNotFoundException e) {
             LOG.log(System.Logger.Level.WARNING,
                     "PJSUA2 account callback class is not available. Incoming INVITE may be rejected by PJSIP.");

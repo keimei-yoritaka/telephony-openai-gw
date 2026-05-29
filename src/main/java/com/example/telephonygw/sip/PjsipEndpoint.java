@@ -2,6 +2,7 @@ package com.example.telephonygw.sip;
 
 import com.example.telephonygw.config.GatewayConfig.RegistrationConfig;
 import com.example.telephonygw.config.GatewayConfig.SipConfig;
+import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.session.CallSessionManager;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -12,10 +13,11 @@ public final class PjsipEndpoint {
     public PjsipEndpoint(
             SipConfig sipConfig,
             RegistrationConfig registrationConfig,
-            CallSessionManager sessionManager
+            CallSessionManager sessionManager,
+            AudioBridge audioBridge
     ) {
         if ("pjsua2".equalsIgnoreCase(sipConfig.backend())) {
-            this.adapter = new Pjsua2SipEndpoint(sipConfig, registrationConfig, sessionManager);
+            this.adapter = new Pjsua2SipEndpoint(sipConfig, registrationConfig, sessionManager, audioBridge);
         } else {
             this.adapter = new PlaceholderSipEndpoint(sipConfig, registrationConfig, sessionManager);
         }

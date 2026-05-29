@@ -3,7 +3,21 @@ package com.example.telephonygw.media;
 import java.time.Instant;
 import java.util.Arrays;
 
-public record AudioFrame(byte[] payload, String codec, int sampleRateHz, int durationMs, Instant capturedAt) {
+public record AudioFrame(
+        String sessionId,
+        Direction direction,
+        long sequenceNumber,
+        byte[] payload,
+        String codec,
+        int sampleRateHz,
+        int durationMs,
+        Instant capturedAt
+) {
+    public enum Direction {
+        INBOUND,
+        OUTBOUND
+    }
+
     public AudioFrame {
         payload = Arrays.copyOf(payload, payload.length);
     }
@@ -13,4 +27,3 @@ public record AudioFrame(byte[] payload, String codec, int sampleRateHz, int dur
         return Arrays.copyOf(payload, payload.length);
     }
 }
-

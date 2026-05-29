@@ -1,0 +1,60 @@
+package com.example.telephonygw.media;
+
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.atomic.AtomicLong;
+
+public final class AudioQueue {
+    private static final System.Logger LOG = System.getLogger(AudioQueue.class.getName());
+
+    private final String name;
+    private final BlockingQueue<AudioFrame> frames;
+    private final AtomicLong offeredFrames = new AtomicLong();
+    private final AtomicLong droppedFrames = new AtomicLong();
+
+    public AudioQueue(String name, int capacity) {
+        this.name = name;
+        this.frames = new ArrayBlockingQueue<>(capacity);
+    }
+
+    public boolean offer(AudioFrame frame) {
+        long offered = offeredFrames.incrementAndGet();
+        boolean accepted = frames.offer(frame);
+        if (!accepted) {
+            long dropped = droppedFrames.incrementAndGet();
+            if (dropped == 1 || dropped % 50 == 0) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "Audio queue dropped frame: queue={0}, offered={1}, dropped={2}, depth={3}",
+                        name, offered, dropped, frames.size());
+            }
+            return false;
+        }
+
+        if (offered == 1 || offered % 250 == 0) {
+            LOG.log(System.Logger.Level.INFO,
+                    "Audio queue accepted frame: queue={0}, offered={1}, dropped={2}, depth={3}",
+                    name, offered, droppedFrames.get(), frames.size());
+        }
+        return true;
+    }
+
+    public AudioFrame poll() {
+        return frames.poll();
+    }
+
+    public int depth() {
+        return frames.size();
+    }
+
+    public long offeredFrames() {
+        return offeredFrames.get();
+    }
+
+    public long droppedFrames() {
+        return droppedFrames.get();
+    }
+
+    public void clear() {
+        frames.clear();
+    }
+}

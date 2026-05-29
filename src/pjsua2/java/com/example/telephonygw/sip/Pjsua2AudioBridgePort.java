@@ -1,6 +1,8 @@
 package com.example.telephonygw.sip;
 
+import com.example.telephonygw.media.AudioBridge;
 import org.pjsip.pjsua2.AudioMediaPort;
+import org.pjsip.pjsua2.ByteVector;
 import org.pjsip.pjsua2.MediaFormatAudio;
 import org.pjsip.pjsua2.MediaFrame;
 import org.pjsip.pjsua2.pjmedia_format_id;
@@ -14,14 +16,16 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
 
     private final String sessionId;
     private final int callId;
+    private final AudioBridge audioBridge;
     private final AtomicLong inboundFrames = new AtomicLong();
     private volatile long firstFrameNanos;
     private volatile long previousFrameNanos;
 
-    Pjsua2AudioBridgePort(String sessionId, int callId) throws Exception {
+    Pjsua2AudioBridgePort(String sessionId, int callId, AudioBridge audioBridge) throws Exception {
         super();
         this.sessionId = sessionId;
         this.callId = callId;
+        this.audioBridge = audioBridge;
         createPort(portName(sessionId, callId), mediaFormat());
     }
 
@@ -35,12 +39,15 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
 
         long previous = previousFrameNanos;
         previousFrameNanos = now;
+        byte[] payload = copyPayload(frame.getBuf(), (int) frame.getSize());
+        audioBridge.enqueueInboundPcm16(sessionId, payload, 8000, 20);
 
         if (count == 1 || count % LOG_EVERY_FRAMES == 0) {
             long deltaMillis = previous == 0L ? 0L : Duration.ofNanos(now - previous).toMillis();
             LOG.log(System.Logger.Level.INFO,
-                    "Observed inbound audio frame: sessionId={0}, callId={1}, frames={2}, bytes={3}, type={4}, deltaMs={5}",
-                    sessionId, callId, count, frame.getSize(), frame.getType(), deltaMillis);
+                    "Observed inbound audio frame: sessionId={0}, callId={1}, frames={2}, bytes={3}, type={4}, deltaMs={5}, queueDepth={6}",
+                    sessionId, callId, count, frame.getSize(), frame.getType(), deltaMillis,
+                    audioBridge.inboundQueue().depth());
         }
     }
 
@@ -64,5 +71,14 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
 
     private static String portName(String sessionId, int callId) {
         return "gateway-audio-" + callId + "-" + sessionId.substring(0, Math.min(8, sessionId.length()));
+    }
+
+    private static byte[] copyPayload(ByteVector source, int frameSize) {
+        int size = Math.min(frameSize, source.size());
+        byte[] payload = new byte[size];
+        for (int i = 0; i < size; i++) {
+            payload[i] = (byte) (source.get(i) & 0xFF);
+        }
+        return payload;
     }
 }
