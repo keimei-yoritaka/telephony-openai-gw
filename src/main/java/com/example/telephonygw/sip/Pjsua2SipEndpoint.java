@@ -161,7 +161,28 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
 
     private void preferPcmuCodec() {
         try {
-            invoke(endpoint, "codecSetPriority", "PCMU/8000", (short) 255);
+            Object codecs = invoke(endpoint, "codecEnum2");
+            int enabled = 0;
+            int disabled = 0;
+            int codecCount = (Integer) invoke(codecs, "size");
+            for (int i = 0; i < codecCount; i++) {
+                Object codec = invoke(codecs, "get", i);
+                String codecId = (String) invoke(codec, "getCodecId");
+                if (codecId.startsWith("PCMU/8000")) {
+                    invoke(endpoint, "codecSetPriority", codecId, (short) 255);
+                    enabled++;
+                } else {
+                    invoke(endpoint, "codecSetPriority", codecId, (short) 0);
+                    disabled++;
+                }
+            }
+            if (enabled == 0) {
+                invoke(endpoint, "codecSetPriority", "PCMU/8000", (short) 255);
+                enabled = 1;
+            }
+            LOG.log(System.Logger.Level.INFO,
+                    "Configured PJSUA2 codec policy: PCMU enabled={0}, other codecs disabled={1}",
+                    enabled, disabled);
         } catch (ReflectiveOperationException | RuntimeException e) {
             LOG.log(System.Logger.Level.WARNING,
                     "Failed to set PCMU codec priority. Continuing with PJSIP defaults: {0}",
