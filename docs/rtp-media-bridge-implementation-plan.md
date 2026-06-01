@@ -375,3 +375,56 @@ Observed inbound audio frame: sessionId=..., callId=..., frames=50, bytes=..., t
 - queue depthが増える。
 - OpenAI送信側が未実装のため、長時間通話ではqueueが満杯になりdrop logが出る可能性がある。
 - dropが出てもprocessが落ちない。
+
+## 12. Step 3 実装内容
+
+Step 3として、inbound audio queueを消費し、OpenAI Realtime APIへ音声chunkを送信する処理を実装した。
+
+追加・変更内容:
+
+- `RealtimeClient`にaudio forwarding workerを追加した。
+- `GatewayApp.start()`で`AudioBridge`初期化後に、`RealtimeClient.startAudioForwarding()`を開始する。
+- forwarding workerは`AudioBridge.inboundQueue()`からframeを取り出す。
+- call session IDごとに`RealtimeSession`を作成し、OpenAI Realtime WebSocketへ接続する。
+- WebSocket接続先は`wss://api.openai.com/v1/realtime?model=...`とする。
+- 認証は`Authorization: Bearer <openai.apiKey>` headerを利用する。
+- 接続後に`session.update`を送信し、Realtime sessionの入力音声形式を設定する。
+- `input_audio_buffer.append` eventでBase64化したaudio chunkを送信する。
+- server VADを利用し、初期実装では明示的な`input_audio_buffer.commit`は送信しない。
+- OpenAI側から返る主要eventをログ出力する。
+- queue上のPCM16 8 kHz frameを、OpenAI送信直前にPCM16 24 kHzへ単純3倍upsampleする。
+- sessionは最後のframe送信から一定時間経過した場合にidle closeする。
+
+現時点の形式:
+
+- PJSUA2側: PCMUでRTP negotiation。
+- Java queue側: PCM16 8 kHz / mono / 20 ms。
+- OpenAI Realtime入力側: PCM16 24 kHz / mono。
+
+期待ログ:
+
+```text
+Started OpenAI Realtime audio forwarding worker
+OpenAI Realtime WebSocket connected: sessionId=...
+Opened OpenAI Realtime session: sessionId=..., model=gpt-realtime, inputRateHz=24000
+Received OpenAI Realtime event: sessionId=..., type=session.created
+Received OpenAI Realtime event: sessionId=..., type=session.updated
+Forwarded inbound audio frame to OpenAI Realtime: sessionId=..., frames=1
+Received OpenAI Realtime event: sessionId=..., type=input_audio_buffer.speech_started
+Received OpenAI Realtime event: sessionId=..., type=input_audio_buffer.speech_stopped
+```
+
+確認観点:
+
+- 通話開始後、最初のaudio frame到着時にOpenAI Realtime WebSocketが接続される。
+- `session.created`および`session.updated`が返る。
+- inbound queueが消費され、Step 2で見られたqueue overflowが継続しない。
+- `input_audio_buffer.speech_started`や`speech_stopped`が返れば、OpenAI側で入力音声が受理されていると判断できる。
+- API key、model、音声形式、rate limit、network failureなどのerrorは`OpenAI Realtime WebSocket error`または`Received OpenAI Realtime event: type=error`で確認する。
+
+未実装:
+
+- OpenAI音声出力のRTP返送。
+- response audio deltaのoutbound queue投入。
+- barge-inや応答キャンセル制御。
+- 高品質resampling。現時点では動作確認優先の単純upsample。

@@ -1,29 +1,217 @@
 package com.example.telephonygw.openai;
 
+import com.example.telephonygw.media.AudioFrame;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Base64;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class RealtimeSession implements AutoCloseable {
     private static final System.Logger LOG = System.getLogger(RealtimeSession.class.getName());
+    private static final URI REALTIME_ENDPOINT = URI.create("wss://api.openai.com/v1/realtime");
+    private static final int OPENAI_INPUT_SAMPLE_RATE_HZ = 24000;
+    private static final int CONNECT_TIMEOUT_SECONDS = 10;
+    private static final int SEND_TIMEOUT_SECONDS = 5;
 
     private final String callSessionId;
+    private final String apiKey;
     private final String model;
-    private final AtomicBoolean open = new AtomicBoolean(true);
+    private final String systemInstructions;
+    private final AtomicBoolean open = new AtomicBoolean(false);
+    private final AtomicLong sentFrames = new AtomicLong();
+    private final AtomicLong sentBytes = new AtomicLong();
+    private volatile long lastFrameNanos;
+    private volatile WebSocket webSocket;
 
-    public RealtimeSession(String callSessionId, String model) {
-        this.callSessionId = callSessionId;
-        this.model = model;
-        LOG.log(System.Logger.Level.INFO,
-                "Opened placeholder Realtime session for call {0} with model {1}",
-                callSessionId, model);
+    public RealtimeSession(String callSessionId, String apiKey, String model, String systemInstructions) {
+        this.callSessionId = Objects.requireNonNull(callSessionId, "callSessionId");
+        this.apiKey = Objects.requireNonNull(apiKey, "apiKey");
+        this.model = Objects.requireNonNull(model, "model");
+        this.systemInstructions = Objects.requireNonNull(systemInstructions, "systemInstructions");
+    }
+
+    public void open() {
+        if (!open.compareAndSet(false, true)) {
+            return;
+        }
+
+        try {
+            webSocket = HttpClient.newHttpClient()
+                    .newWebSocketBuilder()
+                    .header("Authorization", "Bearer " + apiKey)
+                    .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
+                    .buildAsync(sessionUri(), new SessionListener(callSessionId))
+                    .get(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            sendText(sessionUpdateEvent());
+            LOG.log(System.Logger.Level.INFO,
+                    "Opened OpenAI Realtime session: sessionId={0}, model={1}, inputRateHz={2}",
+                    callSessionId, model, OPENAI_INPUT_SAMPLE_RATE_HZ);
+        } catch (Exception e) {
+            open.set(false);
+            throw new IllegalStateException("Failed to open OpenAI Realtime WebSocket session", e);
+        }
+    }
+
+    public boolean appendInputAudio(AudioFrame frame) {
+        if (!open.get() || webSocket == null) {
+            return false;
+        }
+        try {
+            byte[] audio = Pcm16Resampler.upsample(frame.payload(), frame.sampleRateHz(), OPENAI_INPUT_SAMPLE_RATE_HZ);
+            String encoded = Base64.getEncoder().encodeToString(audio);
+            sendText("{\"type\":\"input_audio_buffer.append\",\"audio\":\"" + encoded + "\"}");
+            sentFrames.incrementAndGet();
+            sentBytes.addAndGet(audio.length);
+            lastFrameNanos = System.nanoTime();
+            return true;
+        } catch (RuntimeException e) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "Failed to append audio to OpenAI Realtime session: sessionId={0}, error={1}",
+                    callSessionId, e.getMessage());
+            return false;
+        }
+    }
+
+    public boolean isIdle(long nowNanos, Duration idleTimeout) {
+        long last = lastFrameNanos;
+        return last > 0L && nowNanos - last >= idleTimeout.toNanos();
     }
 
     @Override
     public void close() {
         if (open.compareAndSet(true, false)) {
+            WebSocket socket = webSocket;
+            if (socket != null) {
+                socket.sendClose(WebSocket.NORMAL_CLOSURE, "call session closed");
+            }
             LOG.log(System.Logger.Level.INFO,
-                    "Closed placeholder Realtime session for call {0}",
+                    "Closed OpenAI Realtime session: sessionId={0}, sentFrames={1}, sentBytes={2}",
+                    callSessionId, sentFrames.get(), sentBytes.get());
+        }
+    }
+
+    private URI sessionUri() {
+        String encodedModel = URLEncoder.encode(model, StandardCharsets.UTF_8);
+        return URI.create(REALTIME_ENDPOINT + "?model=" + encodedModel);
+    }
+
+    private void sendText(String payload) {
+        CompletableFuture<WebSocket> future = webSocket.sendText(payload, true);
+        future.orTimeout(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS).join();
+    }
+
+    private String sessionUpdateEvent() {
+        return """
+                {"type":"session.update","session":{"type":"realtime","model":"%s","instructions":"%s","output_modalities":["audio"],"audio":{"input":{"format":{"type":"audio/pcm","rate":%d},"turn_detection":{"type":"server_vad"}},"output":{"format":{"type":"audio/pcm"}}}}}\
+                """.formatted(json(model), json(systemInstructions), OPENAI_INPUT_SAMPLE_RATE_HZ);
+    }
+
+    private static String json(String value) {
+        StringBuilder builder = new StringBuilder(value.length() + 16);
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '"' -> builder.append("\\\"");
+                case '\\' -> builder.append("\\\\");
+                case '\b' -> builder.append("\\b");
+                case '\f' -> builder.append("\\f");
+                case '\n' -> builder.append("\\n");
+                case '\r' -> builder.append("\\r");
+                case '\t' -> builder.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        builder.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        builder.append(c);
+                    }
+                }
+            }
+        }
+        return builder.toString();
+    }
+
+    private static final class SessionListener implements WebSocket.Listener {
+        private final String callSessionId;
+        private final StringBuilder message = new StringBuilder();
+
+        private SessionListener(String callSessionId) {
+            this.callSessionId = callSessionId;
+        }
+
+        @Override
+        public void onOpen(WebSocket webSocket) {
+            WebSocket.Listener.super.onOpen(webSocket);
+            LOG.log(System.Logger.Level.INFO,
+                    "OpenAI Realtime WebSocket connected: sessionId={0}",
                     callSessionId);
+        }
+
+        @Override
+        public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+            message.append(data);
+            if (last) {
+                String payload = message.toString();
+                message.setLength(0);
+                String eventType = extractEventType(payload);
+                if (shouldLog(eventType)) {
+                    LOG.log(System.Logger.Level.INFO,
+                            "Received OpenAI Realtime event: sessionId={0}, type={1}",
+                            callSessionId, eventType);
+                }
+            }
+            return WebSocket.Listener.super.onText(webSocket, data, last);
+        }
+
+        @Override
+        public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            LOG.log(System.Logger.Level.INFO,
+                    "OpenAI Realtime WebSocket closed: sessionId={0}, status={1}, reason={2}",
+                    callSessionId, statusCode, reason);
+            return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
+        }
+
+        @Override
+        public void onError(WebSocket webSocket, Throwable error) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "OpenAI Realtime WebSocket error: sessionId={0}, error={1}",
+                    callSessionId, error.getMessage());
+        }
+
+        private static boolean shouldLog(String eventType) {
+            return eventType.equals("session.created")
+                    || eventType.equals("session.updated")
+                    || eventType.equals("input_audio_buffer.speech_started")
+                    || eventType.equals("input_audio_buffer.speech_stopped")
+                    || eventType.equals("input_audio_buffer.committed")
+                    || eventType.equals("response.created")
+                    || eventType.equals("response.done")
+                    || eventType.equals("error")
+                    || eventType.startsWith("response.output_audio");
+        }
+
+        private static String extractEventType(String payload) {
+            String marker = "\"type\"";
+            int markerIndex = payload.indexOf(marker);
+            if (markerIndex < 0) {
+                return "unknown";
+            }
+            int colonIndex = payload.indexOf(':', markerIndex + marker.length());
+            int quoteStart = payload.indexOf('"', colonIndex + 1);
+            int quoteEnd = payload.indexOf('"', quoteStart + 1);
+            if (colonIndex < 0 || quoteStart < 0 || quoteEnd < 0) {
+                return "unknown";
+            }
+            return payload.substring(quoteStart + 1, quoteEnd);
         }
     }
 }
-

@@ -2,6 +2,7 @@ package com.example.telephonygw.media;
 
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class AudioQueue {
@@ -40,6 +41,10 @@ public final class AudioQueue {
 
     public AudioFrame poll() {
         return frames.poll();
+    }
+
+    public AudioFrame poll(long timeoutMillis) throws InterruptedException {
+        return frames.poll(timeoutMillis, TimeUnit.MILLISECONDS);
     }
 
     public int depth() {
