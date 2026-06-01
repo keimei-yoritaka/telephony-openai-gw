@@ -108,7 +108,13 @@ final class Pjsua2Call extends Call {
                 callAudioMedia.stopTransmit(audioBridgePort);
             }
         } catch (Exception e) {
-            LOG.log(System.Logger.Level.WARNING, "Failed to stop audio bridge transmission: {0}", e.getMessage());
+            if (isAlreadyDisconnected(e)) {
+                LOG.log(System.Logger.Level.DEBUG,
+                        "Audio bridge transmission was already disconnected: {0}",
+                        e.getMessage());
+            } else {
+                LOG.log(System.Logger.Level.WARNING, "Failed to stop audio bridge transmission: {0}", e.getMessage());
+            }
         }
 
         long frameCount = audioBridgePort.inboundFrameCount();
@@ -124,5 +130,13 @@ final class Pjsua2Call extends Call {
         LOG.log(System.Logger.Level.INFO,
                 "Closed PJSUA2 audio bridge: callId={0}, sessionId={1}, frames={2}, elapsedMs={3}",
                 getId(), sessionId, frameCount, elapsedMillis);
+    }
+
+    private static boolean isAlreadyDisconnected(Exception e) {
+        String message = e.getMessage();
+        return message != null
+                && (message.contains("PJ_EINVAL")
+                || message.contains("Invalid value or argument")
+                || message.contains("pjsua_conf_disconnect"));
     }
 }
