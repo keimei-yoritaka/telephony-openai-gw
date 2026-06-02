@@ -107,6 +107,7 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
             }
         }
 
+        registerCurrentThread("pjsua2-stop");
         closeAccount();
         destroyEndpoint();
         sessionManager.closeAll("pjsua2_endpoint_stop");
@@ -212,6 +213,19 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
         }, "pjsua2-events");
         eventThread.setDaemon(true);
         eventThread.start();
+    }
+
+    private void registerCurrentThread(String name) {
+        if (endpoint == null) {
+            return;
+        }
+        try {
+            invoke(endpoint, "libRegisterThread", name);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "Failed to register current PJSUA2 thread {0}: {1}",
+                    name, e.getMessage());
+        }
     }
 
     private void closeAccount() {

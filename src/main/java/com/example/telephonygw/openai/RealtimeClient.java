@@ -14,14 +14,17 @@ public final class RealtimeClient implements AutoCloseable {
     private static final System.Logger LOG = System.getLogger(RealtimeClient.class.getName());
     private static final long POLL_TIMEOUT_MILLIS = 100L;
     private static final Duration SESSION_IDLE_TIMEOUT = Duration.ofSeconds(15);
+    private static final Duration SESSION_RETRY_DELAY = Duration.ofSeconds(15);
 
     private final OpenAiConfig config;
     private final String systemInstructions;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean forwarding = new AtomicBoolean(false);
     private final Map<String, RealtimeSession> sessions = new ConcurrentHashMap<>();
+    private final Map<String, Long> retryNotBeforeNanos = new ConcurrentHashMap<>();
     private final AtomicLong forwardedFrames = new AtomicLong();
     private final AtomicLong failedFrames = new AtomicLong();
+    private final AtomicLong skippedFrames = new AtomicLong();
     private Thread forwardingThread;
 
     public RealtimeClient(OpenAiConfig config, String systemInstructions) {
@@ -70,8 +73,8 @@ public final class RealtimeClient implements AutoCloseable {
             stopForwarding();
             closeSessions();
             LOG.log(System.Logger.Level.INFO,
-                    "Closed OpenAI Realtime client: forwardedFrames={0}, failedFrames={1}",
-                    forwardedFrames.get(), failedFrames.get());
+                    "Closed OpenAI Realtime client: forwardedFrames={0}, failedFrames={1}, skippedFrames={2}",
+                    forwardedFrames.get(), failedFrames.get(), skippedFrames.get());
         }
     }
 
@@ -105,7 +108,24 @@ public final class RealtimeClient implements AutoCloseable {
             return;
         }
 
-        RealtimeSession session = sessions.computeIfAbsent(frame.sessionId(), this::openSession);
+        if (isRetryCoolingDown(frame.sessionId())) {
+            skippedFrames.incrementAndGet();
+            return;
+        }
+
+        RealtimeSession session = sessions.get(frame.sessionId());
+        if (session == null) {
+            try {
+                session = openSession(frame.sessionId());
+                sessions.put(frame.sessionId(), session);
+                retryNotBeforeNanos.remove(frame.sessionId());
+            } catch (RuntimeException e) {
+                markSessionRetry(frame.sessionId(), e);
+                failedFrames.incrementAndGet();
+                return;
+            }
+        }
+
         if (session.appendInputAudio(frame)) {
             long count = forwardedFrames.incrementAndGet();
             if (count == 1 || count % 250 == 0) {
@@ -116,7 +136,34 @@ public final class RealtimeClient implements AutoCloseable {
         } else {
             failedFrames.incrementAndGet();
             sessions.remove(frame.sessionId(), session);
+            markSessionRetry(frame.sessionId(), null);
             session.close();
+        }
+    }
+
+    private boolean isRetryCoolingDown(String sessionId) {
+        Long retryAt = retryNotBeforeNanos.get(sessionId);
+        if (retryAt == null) {
+            return false;
+        }
+        long now = System.nanoTime();
+        if (now >= retryAt) {
+            retryNotBeforeNanos.remove(sessionId, retryAt);
+            return false;
+        }
+        return true;
+    }
+
+    private void markSessionRetry(String sessionId, RuntimeException error) {
+        retryNotBeforeNanos.put(sessionId, System.nanoTime() + SESSION_RETRY_DELAY.toNanos());
+        if (error == null) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "OpenAI Realtime audio append failed. Delaying reconnect: sessionId={0}, retryDelaySeconds={1}",
+                    sessionId, SESSION_RETRY_DELAY.toSeconds());
+        } else {
+            LOG.log(System.Logger.Level.WARNING,
+                    "OpenAI Realtime session open failed. Delaying reconnect: sessionId={0}, retryDelaySeconds={1}, error={2}",
+                    sessionId, SESSION_RETRY_DELAY.toSeconds(), error.getMessage());
         }
     }
 
@@ -151,5 +198,6 @@ public final class RealtimeClient implements AutoCloseable {
             session.close();
         }
         sessions.clear();
+        retryNotBeforeNanos.clear();
     }
 }
