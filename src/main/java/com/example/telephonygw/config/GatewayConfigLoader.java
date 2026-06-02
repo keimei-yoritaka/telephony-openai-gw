@@ -32,7 +32,11 @@ public final class GatewayConfigLoader {
                 ),
                 new GatewayConfig.OpenAiConfig(
                         value(values, "openai.apiKey"),
-                        value(values, "openai.realtimeModel")
+                        value(values, "openai.realtimeModel"),
+                        optionalValue(values, "openai.voice", "shimmer"),
+                        intValue(values, "openai.maxOutputTokens", 120),
+                        optionalValue(values, "openai.turnDetectionType", "semantic_vad"),
+                        optionalValue(values, "openai.turnDetectionEagerness", "low")
                 ),
                 new GatewayConfig.BotConfig(value(values, "bot.systemInstructions")),
                 new GatewayConfig.LoggingConfig(value(values, "logging.level"))
@@ -112,9 +116,26 @@ public final class GatewayConfigLoader {
         return values.getOrDefault(key, "");
     }
 
+    private static String optionalValue(Map<String, String> values, String key, String defaultValue) {
+        String value = values.get(key);
+        return value == null || value.isBlank() ? defaultValue : value;
+    }
+
     private static int intValue(Map<String, String> values, String key) {
         try {
             return Integer.parseInt(value(values, key));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(key + " must be an integer", e);
+        }
+    }
+
+    private static int intValue(Map<String, String> values, String key, int defaultValue) {
+        String value = values.get(key);
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value);
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(key + " must be an integer", e);
         }

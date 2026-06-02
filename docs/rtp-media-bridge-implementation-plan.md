@@ -203,6 +203,14 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 - 通話終了時に`Closed PJSUA2 audio bridge`でinbound/outbound/silence frame数を確認できる。
 - 初期実装ではOpenAI応答が到着するまで無音frameが送られるため、`outboundSilenceFrames`は一定数増える想定。
 
+会話制御の追加調整:
+
+- `openai.voice`を設定ファイル化し、初期値を`shimmer`とする。
+- `openai.maxOutputTokens`を設定ファイル化し、初期値を`120`として応答を短めに制限する。
+- `openai.turnDetectionType`を`semantic_vad`、`openai.turnDetectionEagerness`を`low`として、ユーザー発話完了を急いで判定しすぎない設定にする。
+- `input_audio_buffer.speech_started`を受信した場合、未送出のoutbound音声を破棄し、進行中responseがあれば`response.cancel`を送る。
+- bot instructionsには「原則1文、最大2文」「相手が話し終わるまで待つ」「柔らかく落ち着いた女性的な声の印象」を明示する。
+
 ### Step 5: PCMU最適化
 
 目的:

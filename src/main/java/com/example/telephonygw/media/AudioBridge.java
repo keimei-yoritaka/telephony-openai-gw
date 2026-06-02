@@ -65,6 +65,16 @@ public final class AudioBridge {
         return queue == null ? 0 : queue.depth();
     }
 
+    public int clearOutbound(String sessionId) {
+        AudioQueue queue = outboundQueues.get(sessionId);
+        if (queue == null) {
+            return 0;
+        }
+        int depth = queue.depth();
+        queue.clear();
+        return depth;
+    }
+
     public void stop() {
         if (initialized.compareAndSet(true, false)) {
             long outboundOffered = 0;

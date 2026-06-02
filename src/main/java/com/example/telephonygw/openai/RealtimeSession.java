@@ -31,6 +31,10 @@ public final class RealtimeSession implements AutoCloseable {
     private final String callSessionId;
     private final String apiKey;
     private final String model;
+    private final String voice;
+    private final int maxOutputTokens;
+    private final String turnDetectionType;
+    private final String turnDetectionEagerness;
     private final String systemInstructions;
     private final AudioBridge audioBridge;
     private final AtomicBoolean open = new AtomicBoolean(false);
@@ -42,10 +46,24 @@ public final class RealtimeSession implements AutoCloseable {
     private volatile long lastFrameNanos;
     private volatile WebSocket webSocket;
 
-    public RealtimeSession(String callSessionId, String apiKey, String model, String systemInstructions, AudioBridge audioBridge) {
+    public RealtimeSession(
+            String callSessionId,
+            String apiKey,
+            String model,
+            String voice,
+            int maxOutputTokens,
+            String turnDetectionType,
+            String turnDetectionEagerness,
+            String systemInstructions,
+            AudioBridge audioBridge
+    ) {
         this.callSessionId = Objects.requireNonNull(callSessionId, "callSessionId");
         this.apiKey = Objects.requireNonNull(apiKey, "apiKey");
         this.model = Objects.requireNonNull(model, "model");
+        this.voice = Objects.requireNonNull(voice, "voice");
+        this.maxOutputTokens = maxOutputTokens;
+        this.turnDetectionType = Objects.requireNonNull(turnDetectionType, "turnDetectionType");
+        this.turnDetectionEagerness = Objects.requireNonNull(turnDetectionEagerness, "turnDetectionEagerness");
         this.systemInstructions = Objects.requireNonNull(systemInstructions, "systemInstructions");
         this.audioBridge = Objects.requireNonNull(audioBridge, "audioBridge");
     }
@@ -65,8 +83,8 @@ public final class RealtimeSession implements AutoCloseable {
                     .get(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             sendText(sessionUpdateEvent());
             LOG.log(System.Logger.Level.INFO,
-                    "Opened OpenAI Realtime session: sessionId={0}, model={1}, inputRateHz={2}",
-                    callSessionId, model, OPENAI_AUDIO_SAMPLE_RATE_HZ);
+                    "Opened OpenAI Realtime session: sessionId={0}, model={1}, voice={2}, inputRateHz={3}, maxOutputTokens={4}, turnDetection={5}",
+                    callSessionId, model, voice, OPENAI_AUDIO_SAMPLE_RATE_HZ, maxOutputTokens, turnDetectionType);
         } catch (Exception e) {
             open.set(false);
             throw new IllegalStateException("Failed to open OpenAI Realtime WebSocket session", e);
@@ -124,8 +142,20 @@ public final class RealtimeSession implements AutoCloseable {
 
     private String sessionUpdateEvent() {
         return """
-                {"type":"session.update","session":{"type":"realtime","model":"%s","instructions":"%s","output_modalities":["audio"],"audio":{"input":{"format":{"type":"audio/pcm","rate":%d},"turn_detection":{"type":"server_vad"}},"output":{"format":{"type":"audio/pcm","rate":%d}}}}}\
-                """.formatted(json(model), json(systemInstructions), OPENAI_AUDIO_SAMPLE_RATE_HZ, OPENAI_AUDIO_SAMPLE_RATE_HZ);
+                {"type":"session.update","session":{"type":"realtime","model":"%s","voice":"%s","instructions":"%s","max_output_tokens":%d,"output_modalities":["audio"],"audio":{"input":{"format":{"type":"audio/pcm","rate":%d},"turn_detection":%s},"output":{"format":{"type":"audio/pcm","rate":%d}}}}}\
+                """.formatted(json(model), json(voice), json(systemInstructions), maxOutputTokens,
+                OPENAI_AUDIO_SAMPLE_RATE_HZ, turnDetectionJson(), OPENAI_AUDIO_SAMPLE_RATE_HZ);
+    }
+
+    private String turnDetectionJson() {
+        if ("semantic_vad".equalsIgnoreCase(turnDetectionType)) {
+            return """
+                    {"type":"semantic_vad","eagerness":"%s","create_response":true,"interrupt_response":true}\
+                    """.formatted(json(turnDetectionEagerness));
+        }
+        return """
+                {"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":800,"create_response":true,"interrupt_response":true}\
+                """;
     }
 
     private static String json(String value) {
@@ -158,6 +188,7 @@ public final class RealtimeSession implements AutoCloseable {
         private final ByteArrayOutputStream pendingOutputPcm8;
         private final AtomicLong receivedOutputChunks;
         private final AtomicLong queuedOutputFrames;
+        private final AtomicBoolean responseActive = new AtomicBoolean(false);
         private final StringBuilder message = new StringBuilder();
 
         private SessionListener(
@@ -198,8 +229,14 @@ public final class RealtimeSession implements AutoCloseable {
                             extractStringField(payload, "message", 0));
                     return WebSocket.Listener.super.onText(webSocket, data, last);
                 }
-                if (eventType.equals("response.output_audio.delta")) {
+                if (eventType.equals("response.output_audio.delta") && responseActive.get()) {
                     queueOutputAudio(payload);
+                } else if (eventType.equals("input_audio_buffer.speech_started")) {
+                    handleUserSpeechStarted(webSocket);
+                } else if (eventType.equals("response.created")) {
+                    responseActive.set(true);
+                } else if (eventType.equals("response.done")) {
+                    responseActive.set(false);
                 }
                 if (shouldLog(eventType)) {
                     LOG.log(System.Logger.Level.INFO,
@@ -282,6 +319,28 @@ public final class RealtimeSession implements AutoCloseable {
                 if (offset < buffered.length) {
                     pendingOutputPcm8.write(buffered, offset, buffered.length - offset);
                 }
+            }
+        }
+
+        private void handleUserSpeechStarted(WebSocket webSocket) {
+            int clearedFrames = audioBridge.clearOutbound(callSessionId);
+            synchronized (pendingOutputPcm8) {
+                pendingOutputPcm8.reset();
+            }
+            if (responseActive.compareAndSet(true, false)) {
+                webSocket.sendText("{\"type\":\"response.cancel\"}", true)
+                        .orTimeout(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                        .exceptionally(error -> {
+                            LOG.log(System.Logger.Level.DEBUG,
+                                    "OpenAI response cancel failed or was not needed: sessionId={0}, error={1}",
+                                    callSessionId, error.getMessage());
+                            return null;
+                        });
+            }
+            if (clearedFrames > 0) {
+                LOG.log(System.Logger.Level.INFO,
+                        "Cleared outbound audio because user speech started: sessionId={0}, clearedFrames={1}",
+                        callSessionId, clearedFrames);
             }
         }
 

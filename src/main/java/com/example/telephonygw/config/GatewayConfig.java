@@ -47,10 +47,26 @@ public record GatewayConfig(
         }
     }
 
-    public record OpenAiConfig(String apiKey, String realtimeModel) {
+    public record OpenAiConfig(
+            String apiKey,
+            String realtimeModel,
+            String voice,
+            int maxOutputTokens,
+            String turnDetectionType,
+            String turnDetectionEagerness
+    ) {
         public void validate() {
             require("openai.apiKey", apiKey);
             require("openai.realtimeModel", realtimeModel);
+            require("openai.voice", voice);
+            requireRange("openai.maxOutputTokens", maxOutputTokens, 1, 4096);
+            require("openai.turnDetectionType", turnDetectionType);
+            if (!"server_vad".equalsIgnoreCase(turnDetectionType)
+                    && !"semantic_vad".equalsIgnoreCase(turnDetectionType)) {
+                throw new IllegalArgumentException(
+                        "openai.turnDetectionType must be server_vad or semantic_vad: " + turnDetectionType);
+            }
+            require("openai.turnDetectionEagerness", turnDetectionEagerness);
         }
     }
 

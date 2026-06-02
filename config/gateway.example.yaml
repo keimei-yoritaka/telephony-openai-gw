@@ -18,9 +18,13 @@ registration:
 openai:
   apiKey: ${OPENAI_API_KEY}
   realtimeModel: gpt-realtime
+  voice: shimmer
+  maxOutputTokens: 120
+  turnDetectionType: semantic_vad
+  turnDetectionEagerness: low
 
 bot:
-  systemInstructions: "あなたは電話応対を行うAIアシスタントです。短く明瞭に回答してください。"
+  systemInstructions: "あなたは電話応対を行うAIアシスタントです。回答は原則1文、最大2文で、相手が話し終わるまで待ってから簡潔に返答してください。柔らかく落ち着いた女性的な声の印象で話してください。"
 
 logging:
   level: INFO
