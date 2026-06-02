@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class AudioBridge {
     private static final System.Logger LOG = System.getLogger(AudioBridge.class.getName());
     private static final int DEFAULT_QUEUE_CAPACITY = 250;
-    private static final int DEFAULT_OUTBOUND_QUEUE_CAPACITY = 500;
+    private static final int DEFAULT_OUTBOUND_QUEUE_CAPACITY = 1000;
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AudioQueue inboundQueue = new AudioQueue("inbound", DEFAULT_QUEUE_CAPACITY);

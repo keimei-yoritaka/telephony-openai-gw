@@ -1,5 +1,7 @@
 package com.example.telephonygw.config;
 
+import java.util.Set;
+
 public record GatewayConfig(
         SipConfig sip,
         RegistrationConfig registration,
@@ -7,6 +9,9 @@ public record GatewayConfig(
         BotConfig bot,
         LoggingConfig logging
 ) {
+    private static final Set<String> SUPPORTED_REALTIME_VOICES = Set.of(
+            "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar");
+
     public record SipConfig(
             String backend,
             String bindAddress,
@@ -59,6 +64,10 @@ public record GatewayConfig(
             require("openai.apiKey", apiKey);
             require("openai.realtimeModel", realtimeModel);
             require("openai.voice", voice);
+            if (!SUPPORTED_REALTIME_VOICES.contains(voice.toLowerCase())) {
+                throw new IllegalArgumentException(
+                        "openai.voice must be one of: " + String.join(", ", SUPPORTED_REALTIME_VOICES) + ": " + voice);
+            }
             requireRange("openai.maxOutputTokens", maxOutputTokens, 1, 4096);
             require("openai.turnDetectionType", turnDetectionType);
             if (!"server_vad".equalsIgnoreCase(turnDetectionType)
