@@ -163,6 +163,15 @@ public final class RealtimeSession implements AutoCloseable {
                 String payload = message.toString();
                 message.setLength(0);
                 String eventType = extractEventType(payload);
+                if (eventType.equals("error")) {
+                    LOG.log(System.Logger.Level.WARNING,
+                            "Received OpenAI Realtime error event: sessionId={0}, errorType={1}, code={2}, message={3}",
+                            callSessionId,
+                            extractStringField(payload, "type", payload.indexOf("\"error\"")),
+                            extractStringField(payload, "code", 0),
+                            extractStringField(payload, "message", 0));
+                    return WebSocket.Listener.super.onText(webSocket, data, last);
+                }
                 if (shouldLog(eventType)) {
                     LOG.log(System.Logger.Level.INFO,
                             "Received OpenAI Realtime event: sessionId={0}, type={1}",
@@ -212,6 +221,74 @@ public final class RealtimeSession implements AutoCloseable {
                 return "unknown";
             }
             return payload.substring(quoteStart + 1, quoteEnd);
+        }
+
+        private static String extractStringField(String payload, String fieldName, int fromIndex) {
+            int startIndex = Math.max(0, fromIndex);
+            String marker = "\"" + fieldName + "\"";
+            int markerIndex = payload.indexOf(marker, startIndex);
+            if (markerIndex < 0) {
+                return "unknown";
+            }
+            int colonIndex = payload.indexOf(':', markerIndex + marker.length());
+            int quoteStart = payload.indexOf('"', colonIndex + 1);
+            int quoteEnd = quoteStart < 0 ? -1 : findStringEnd(payload, quoteStart + 1);
+            if (colonIndex < 0 || quoteStart < 0 || quoteEnd < 0) {
+                return "unknown";
+            }
+            return unescapeJsonString(payload.substring(quoteStart + 1, quoteEnd));
+        }
+
+        private static int findStringEnd(String payload, int fromIndex) {
+            boolean escaped = false;
+            for (int i = fromIndex; i < payload.length(); i++) {
+                char c = payload.charAt(i);
+                if (escaped) {
+                    escaped = false;
+                    continue;
+                }
+                if (c == '\\') {
+                    escaped = true;
+                    continue;
+                }
+                if (c == '"') {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        private static String unescapeJsonString(String value) {
+            StringBuilder builder = new StringBuilder(value.length());
+            boolean escaped = false;
+            for (int i = 0; i < value.length(); i++) {
+                char c = value.charAt(i);
+                if (!escaped) {
+                    if (c == '\\') {
+                        escaped = true;
+                    } else {
+                        builder.append(c);
+                    }
+                    continue;
+                }
+
+                switch (c) {
+                    case '"' -> builder.append('"');
+                    case '\\' -> builder.append('\\');
+                    case '/' -> builder.append('/');
+                    case 'b' -> builder.append('\b');
+                    case 'f' -> builder.append('\f');
+                    case 'n' -> builder.append('\n');
+                    case 'r' -> builder.append('\r');
+                    case 't' -> builder.append('\t');
+                    default -> builder.append(c);
+                }
+                escaped = false;
+            }
+            if (escaped) {
+                builder.append('\\');
+            }
+            return builder.toString();
         }
     }
 }
