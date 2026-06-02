@@ -1,6 +1,7 @@
 package com.example.telephonygw.openai;
 
 import com.example.telephonygw.config.GatewayConfig.OpenAiConfig;
+import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.media.AudioFrame;
 import com.example.telephonygw.media.AudioQueue;
 
@@ -18,6 +19,7 @@ public final class RealtimeClient implements AutoCloseable {
 
     private final OpenAiConfig config;
     private final String systemInstructions;
+    private final AudioBridge audioBridge;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean forwarding = new AtomicBoolean(false);
     private final Map<String, RealtimeSession> sessions = new ConcurrentHashMap<>();
@@ -27,9 +29,10 @@ public final class RealtimeClient implements AutoCloseable {
     private final AtomicLong skippedFrames = new AtomicLong();
     private Thread forwardingThread;
 
-    public RealtimeClient(OpenAiConfig config, String systemInstructions) {
+    public RealtimeClient(OpenAiConfig config, String systemInstructions, AudioBridge audioBridge) {
         this.config = config;
         this.systemInstructions = systemInstructions;
+        this.audioBridge = audioBridge;
     }
 
     public void initialize() {
@@ -62,7 +65,8 @@ public final class RealtimeClient implements AutoCloseable {
                 callSessionId,
                 config.apiKey(),
                 config.realtimeModel(),
-                systemInstructions);
+                systemInstructions,
+                audioBridge);
         session.open();
         return session;
     }

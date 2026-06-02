@@ -186,6 +186,23 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 - 発信者がOpenAIの音声レスポンスを聞ける。
 - outbound queue underrun/dropがログで観測できる。
 
+実装内容:
+
+- OpenAI Realtimeの`response.output_audio.delta`を受信し、Base64 decodeする。
+- OpenAI出力は24 kHz PCM16として扱い、RTP側の8 kHz PCM16へdownsamplingする。
+- downsampling後の音声を20 ms単位、320 byteのPCM16 frameへ分割する。
+- 分割したframeを`AudioBridge`のoutbound queueへ積む。
+- `Pjsua2AudioBridgePort.onFrameRequested()`でoutbound queueからframeを取り出し、PJSUA2 conference bridgeへ返す。
+- outbound queueに音声がない場合は、20 ms分の無音frameを返す。
+- `AudioMediaPort`は双方向portとして利用し、`caller audio media -> bridge port`と`bridge port -> caller audio media`の両方向を接続する。
+
+確認観点:
+
+- OpenAIから音声deltaを受信したときに`Queued OpenAI output audio frame for RTP`が出力される。
+- PJSUA2から送信frameを要求されたときに`Provided outbound RTP audio frame`が出力される。
+- 通話終了時に`Closed PJSUA2 audio bridge`でinbound/outbound/silence frame数を確認できる。
+- 初期実装ではOpenAI応答が到着するまで無音frameが送られるため、`outboundSilenceFrames`は一定数増える想定。
+
 ### Step 5: PCMU最適化
 
 目的:

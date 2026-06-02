@@ -94,6 +94,7 @@ final class Pjsua2Call extends Call {
         callAudioMedia = getAudioMedia(mediaIndex);
         audioBridgePort = new Pjsua2AudioBridgePort(sessionId, getId(), audioBridge);
         callAudioMedia.startTransmit(audioBridgePort);
+        audioBridgePort.startTransmit(callAudioMedia);
         LOG.log(System.Logger.Level.INFO,
                 "Attached PJSUA2 audio bridge: callId={0}, sessionId={1}, mediaIndex={2}",
                 getId(), sessionId, mediaIndex);
@@ -106,6 +107,7 @@ final class Pjsua2Call extends Call {
         try {
             if (callAudioMedia != null) {
                 callAudioMedia.stopTransmit(audioBridgePort);
+                audioBridgePort.stopTransmit(callAudioMedia);
             }
         } catch (Exception e) {
             if (isAlreadyDisconnected(e)) {
@@ -117,7 +119,9 @@ final class Pjsua2Call extends Call {
             }
         }
 
-        long frameCount = audioBridgePort.inboundFrameCount();
+        long inboundFrameCount = audioBridgePort.inboundFrameCount();
+        long outboundFrameCount = audioBridgePort.outboundFrameCount();
+        long outboundSilenceFrameCount = audioBridgePort.outboundSilenceFrameCount();
         long elapsedMillis = audioBridgePort.elapsedMillis();
         try {
             audioBridgePort.delete();
@@ -128,8 +132,8 @@ final class Pjsua2Call extends Call {
             callAudioMedia = null;
         }
         LOG.log(System.Logger.Level.INFO,
-                "Closed PJSUA2 audio bridge: callId={0}, sessionId={1}, frames={2}, elapsedMs={3}",
-                getId(), sessionId, frameCount, elapsedMillis);
+                "Closed PJSUA2 audio bridge: callId={0}, sessionId={1}, inboundFrames={2}, outboundFrames={3}, outboundSilenceFrames={4}, elapsedMs={5}",
+                getId(), sessionId, inboundFrameCount, outboundFrameCount, outboundSilenceFrameCount, elapsedMillis);
     }
 
     private static boolean isAlreadyDisconnected(Exception e) {

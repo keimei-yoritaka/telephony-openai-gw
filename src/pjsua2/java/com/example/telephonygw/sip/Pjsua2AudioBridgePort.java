@@ -1,11 +1,13 @@
 package com.example.telephonygw.sip;
 
 import com.example.telephonygw.media.AudioBridge;
+import com.example.telephonygw.media.AudioFrame;
 import org.pjsip.pjsua2.AudioMediaPort;
 import org.pjsip.pjsua2.ByteVector;
 import org.pjsip.pjsua2.MediaFormatAudio;
 import org.pjsip.pjsua2.MediaFrame;
 import org.pjsip.pjsua2.pjmedia_format_id;
+import org.pjsip.pjsua2.pjmedia_frame_type;
 
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
@@ -13,11 +15,16 @@ import java.util.concurrent.atomic.AtomicLong;
 final class Pjsua2AudioBridgePort extends AudioMediaPort {
     private static final System.Logger LOG = System.getLogger(Pjsua2AudioBridgePort.class.getName());
     private static final long LOG_EVERY_FRAMES = 50;
+    private static final int SAMPLE_RATE_HZ = 8000;
+    private static final int FRAME_DURATION_MS = 20;
+    private static final int FRAME_BYTES = 320;
 
     private final String sessionId;
     private final int callId;
     private final AudioBridge audioBridge;
     private final AtomicLong inboundFrames = new AtomicLong();
+    private final AtomicLong outboundFrames = new AtomicLong();
+    private final AtomicLong outboundSilenceFrames = new AtomicLong();
     private volatile long firstFrameNanos;
     private volatile long previousFrameNanos;
 
@@ -40,7 +47,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         long previous = previousFrameNanos;
         previousFrameNanos = now;
         byte[] payload = copyPayload(frame.getBuf(), (int) frame.getSize());
-        audioBridge.enqueueInboundPcm16(sessionId, payload, 8000, 20);
+        audioBridge.enqueueInboundPcm16(sessionId, payload, SAMPLE_RATE_HZ, FRAME_DURATION_MS);
 
         if (count == 1 || count % LOG_EVERY_FRAMES == 0) {
             long deltaMillis = previous == 0L ? 0L : Duration.ofNanos(now - previous).toMillis();
@@ -51,8 +58,40 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         }
     }
 
+    @Override
+    public void onFrameRequested(MediaFrame frame) {
+        AudioFrame outbound = audioBridge.pollOutbound(sessionId);
+        byte[] payload;
+        if (outbound == null) {
+            payload = new byte[FRAME_BYTES];
+            outboundSilenceFrames.incrementAndGet();
+        } else {
+            payload = normalizeFrame(outbound.payload());
+        }
+
+        frame.setType(pjmedia_frame_type.PJMEDIA_FRAME_TYPE_AUDIO);
+        frame.setBuf(toByteVector(payload));
+        frame.setSize(payload.length);
+
+        long count = outboundFrames.incrementAndGet();
+        if (count == 1 || count % LOG_EVERY_FRAMES == 0) {
+            LOG.log(System.Logger.Level.INFO,
+                    "Provided outbound RTP audio frame: sessionId={0}, callId={1}, frames={2}, silenceFrames={3}, bytes={4}, outboundDepth={5}",
+                    sessionId, callId, count, outboundSilenceFrames.get(), payload.length,
+                    audioBridge.outboundDepth(sessionId));
+        }
+    }
+
     long inboundFrameCount() {
         return inboundFrames.get();
+    }
+
+    long outboundFrameCount() {
+        return outboundFrames.get();
+    }
+
+    long outboundSilenceFrameCount() {
+        return outboundSilenceFrames.get();
     }
 
     long elapsedMillis() {
@@ -65,7 +104,8 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
 
     private static MediaFormatAudio mediaFormat() {
         MediaFormatAudio format = new MediaFormatAudio();
-        format.init(pjmedia_format_id.PJMEDIA_FORMAT_PCM, 8000, 1, 20000, 16, 128000, 128000);
+        format.init(pjmedia_format_id.PJMEDIA_FORMAT_PCM, SAMPLE_RATE_HZ, 1,
+                FRAME_DURATION_MS * 1000, 16, 128000, 128000);
         return format;
     }
 
@@ -80,5 +120,23 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             payload[i] = (byte) (source.get(i) & 0xFF);
         }
         return payload;
+    }
+
+    private static ByteVector toByteVector(byte[] payload) {
+        ByteVector vector = new ByteVector();
+        vector.reserve(payload.length);
+        for (byte value : payload) {
+            vector.add((short) (value & 0xFF));
+        }
+        return vector;
+    }
+
+    private static byte[] normalizeFrame(byte[] payload) {
+        if (payload.length == FRAME_BYTES) {
+            return payload;
+        }
+        byte[] normalized = new byte[FRAME_BYTES];
+        System.arraycopy(payload, 0, normalized, 0, Math.min(payload.length, FRAME_BYTES));
+        return normalized;
     }
 }

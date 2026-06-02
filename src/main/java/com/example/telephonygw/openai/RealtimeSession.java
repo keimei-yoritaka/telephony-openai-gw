@@ -1,7 +1,9 @@
 package com.example.telephonygw.openai;
 
 import com.example.telephonygw.media.AudioFrame;
+import com.example.telephonygw.media.AudioBridge;
 
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -20,6 +22,9 @@ public final class RealtimeSession implements AutoCloseable {
     private static final System.Logger LOG = System.getLogger(RealtimeSession.class.getName());
     private static final URI REALTIME_ENDPOINT = URI.create("wss://api.openai.com/v1/realtime");
     private static final int OPENAI_AUDIO_SAMPLE_RATE_HZ = 24000;
+    private static final int RTP_AUDIO_SAMPLE_RATE_HZ = 8000;
+    private static final int RTP_FRAME_DURATION_MS = 20;
+    private static final int RTP_FRAME_BYTES = 320;
     private static final int CONNECT_TIMEOUT_SECONDS = 10;
     private static final int SEND_TIMEOUT_SECONDS = 5;
 
@@ -27,17 +32,22 @@ public final class RealtimeSession implements AutoCloseable {
     private final String apiKey;
     private final String model;
     private final String systemInstructions;
+    private final AudioBridge audioBridge;
     private final AtomicBoolean open = new AtomicBoolean(false);
     private final AtomicLong sentFrames = new AtomicLong();
     private final AtomicLong sentBytes = new AtomicLong();
+    private final AtomicLong receivedOutputChunks = new AtomicLong();
+    private final AtomicLong queuedOutputFrames = new AtomicLong();
+    private final ByteArrayOutputStream pendingOutputPcm8 = new ByteArrayOutputStream();
     private volatile long lastFrameNanos;
     private volatile WebSocket webSocket;
 
-    public RealtimeSession(String callSessionId, String apiKey, String model, String systemInstructions) {
+    public RealtimeSession(String callSessionId, String apiKey, String model, String systemInstructions, AudioBridge audioBridge) {
         this.callSessionId = Objects.requireNonNull(callSessionId, "callSessionId");
         this.apiKey = Objects.requireNonNull(apiKey, "apiKey");
         this.model = Objects.requireNonNull(model, "model");
         this.systemInstructions = Objects.requireNonNull(systemInstructions, "systemInstructions");
+        this.audioBridge = Objects.requireNonNull(audioBridge, "audioBridge");
     }
 
     public void open() {
@@ -50,7 +60,8 @@ public final class RealtimeSession implements AutoCloseable {
                     .newWebSocketBuilder()
                     .header("Authorization", "Bearer " + apiKey)
                     .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
-                    .buildAsync(sessionUri(), new SessionListener(callSessionId))
+                    .buildAsync(sessionUri(), new SessionListener(callSessionId, audioBridge, pendingOutputPcm8,
+                            receivedOutputChunks, queuedOutputFrames))
                     .get(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             sendText(sessionUpdateEvent());
             LOG.log(System.Logger.Level.INFO,
@@ -95,8 +106,9 @@ public final class RealtimeSession implements AutoCloseable {
                 socket.sendClose(WebSocket.NORMAL_CLOSURE, "call session closed");
             }
             LOG.log(System.Logger.Level.INFO,
-                    "Closed OpenAI Realtime session: sessionId={0}, sentFrames={1}, sentBytes={2}",
-                    callSessionId, sentFrames.get(), sentBytes.get());
+                    "Closed OpenAI Realtime session: sessionId={0}, sentFrames={1}, sentBytes={2}, receivedOutputChunks={3}, queuedOutputFrames={4}",
+                    callSessionId, sentFrames.get(), sentBytes.get(),
+                    receivedOutputChunks.get(), queuedOutputFrames.get());
         }
     }
 
@@ -142,10 +154,24 @@ public final class RealtimeSession implements AutoCloseable {
 
     private static final class SessionListener implements WebSocket.Listener {
         private final String callSessionId;
+        private final AudioBridge audioBridge;
+        private final ByteArrayOutputStream pendingOutputPcm8;
+        private final AtomicLong receivedOutputChunks;
+        private final AtomicLong queuedOutputFrames;
         private final StringBuilder message = new StringBuilder();
 
-        private SessionListener(String callSessionId) {
+        private SessionListener(
+                String callSessionId,
+                AudioBridge audioBridge,
+                ByteArrayOutputStream pendingOutputPcm8,
+                AtomicLong receivedOutputChunks,
+                AtomicLong queuedOutputFrames
+        ) {
             this.callSessionId = callSessionId;
+            this.audioBridge = audioBridge;
+            this.pendingOutputPcm8 = pendingOutputPcm8;
+            this.receivedOutputChunks = receivedOutputChunks;
+            this.queuedOutputFrames = queuedOutputFrames;
         }
 
         @Override
@@ -171,6 +197,9 @@ public final class RealtimeSession implements AutoCloseable {
                             extractStringField(payload, "code", 0),
                             extractStringField(payload, "message", 0));
                     return WebSocket.Listener.super.onText(webSocket, data, last);
+                }
+                if (eventType.equals("response.output_audio.delta")) {
+                    queueOutputAudio(payload);
                 }
                 if (shouldLog(eventType)) {
                     LOG.log(System.Logger.Level.INFO,
@@ -221,6 +250,39 @@ public final class RealtimeSession implements AutoCloseable {
                 return "unknown";
             }
             return payload.substring(quoteStart + 1, quoteEnd);
+        }
+
+        private void queueOutputAudio(String payload) {
+            String delta = extractStringField(payload, "delta", 0);
+            if (delta.equals("unknown") || delta.isBlank()) {
+                return;
+            }
+
+            byte[] pcm24 = Base64.getDecoder().decode(delta);
+            byte[] pcm8 = Pcm16Resampler.downsample(pcm24, OPENAI_AUDIO_SAMPLE_RATE_HZ, RTP_AUDIO_SAMPLE_RATE_HZ);
+            receivedOutputChunks.incrementAndGet();
+            synchronized (pendingOutputPcm8) {
+                pendingOutputPcm8.writeBytes(pcm8);
+                byte[] buffered = pendingOutputPcm8.toByteArray();
+                int offset = 0;
+                while (buffered.length - offset >= RTP_FRAME_BYTES) {
+                    byte[] frame = new byte[RTP_FRAME_BYTES];
+                    System.arraycopy(buffered, offset, frame, 0, RTP_FRAME_BYTES);
+                    offset += RTP_FRAME_BYTES;
+                    if (audioBridge.enqueueOutboundPcm16(callSessionId, frame, RTP_AUDIO_SAMPLE_RATE_HZ, RTP_FRAME_DURATION_MS)) {
+                        long count = queuedOutputFrames.incrementAndGet();
+                        if (count == 1 || count % 250 == 0) {
+                            LOG.log(System.Logger.Level.INFO,
+                                    "Queued OpenAI output audio frame for RTP: sessionId={0}, frames={1}, outboundDepth={2}",
+                                    callSessionId, count, audioBridge.outboundDepth(callSessionId));
+                        }
+                    }
+                }
+                pendingOutputPcm8.reset();
+                if (offset < buffered.length) {
+                    pendingOutputPcm8.write(buffered, offset, buffered.length - offset);
+                }
+            }
         }
 
         private static String extractStringField(String payload, String fieldName, int fromIndex) {

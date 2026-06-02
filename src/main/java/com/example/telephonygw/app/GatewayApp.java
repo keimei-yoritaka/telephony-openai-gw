@@ -24,7 +24,7 @@ public final class GatewayApp {
         this.config = config;
         this.sessionManager = new CallSessionManager();
         this.audioBridge = new AudioBridge();
-        this.realtimeClient = new RealtimeClient(config.openAi(), config.bot().systemInstructions());
+        this.realtimeClient = new RealtimeClient(config.openAi(), config.bot().systemInstructions(), audioBridge);
         this.sipEndpoint = new PjsipEndpoint(config.sip(), config.registration(), sessionManager, audioBridge);
     }
 
@@ -53,8 +53,8 @@ public final class GatewayApp {
 
         LOG.log(System.Logger.Level.INFO, "Stopping Telephony OpenAI Gateway");
         sipEndpoint.stop();
-        audioBridge.stop();
         realtimeClient.close();
+        audioBridge.stop();
         sessionManager.closeAll("gateway_shutdown");
         shutdownLatch.countDown();
         LOG.log(System.Logger.Level.INFO, "Gateway stopped");
