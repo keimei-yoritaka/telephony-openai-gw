@@ -18,6 +18,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
     private static final int SAMPLE_RATE_HZ = 8000;
     private static final int FRAME_DURATION_MS = 20;
     private static final int FRAME_BYTES = 320;
+    private static final int OUTBOUND_START_BUFFER_FRAMES = 8;
 
     private final String sessionId;
     private final int callId;
@@ -25,6 +26,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
     private final AtomicLong inboundFrames = new AtomicLong();
     private final AtomicLong outboundFrames = new AtomicLong();
     private final AtomicLong outboundSilenceFrames = new AtomicLong();
+    private volatile boolean outboundPlaying;
     private volatile long firstFrameNanos;
     private volatile long previousFrameNanos;
 
@@ -60,15 +62,35 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
 
     @Override
     public void onFrameRequested(MediaFrame frame) {
+        int depthBeforePoll = audioBridge.outboundDepth(sessionId);
+        if (!outboundPlaying && depthBeforePoll < OUTBOUND_START_BUFFER_FRAMES) {
+            provideFrame(frame, new byte[FRAME_BYTES], true);
+            return;
+        }
+
+        if (!outboundPlaying) {
+            outboundPlaying = true;
+            LOG.log(System.Logger.Level.INFO,
+                    "Started outbound RTP audio playout: sessionId={0}, callId={1}, bufferedFrames={2}",
+                    sessionId, callId, depthBeforePoll);
+        }
+
         AudioFrame outbound = audioBridge.pollOutbound(sessionId);
         byte[] payload;
         if (outbound == null) {
+            outboundPlaying = false;
             payload = new byte[FRAME_BYTES];
-            outboundSilenceFrames.incrementAndGet();
+            provideFrame(frame, payload, true);
         } else {
             payload = normalizeFrame(outbound.payload());
+            provideFrame(frame, payload, false);
         }
+    }
 
+    private void provideFrame(MediaFrame frame, byte[] payload, boolean silence) {
+        if (silence) {
+            outboundSilenceFrames.incrementAndGet();
+        }
         frame.setType(pjmedia_frame_type.PJMEDIA_FRAME_TYPE_AUDIO);
         frame.setBuf(toByteVector(payload));
         frame.setSize(payload.length);

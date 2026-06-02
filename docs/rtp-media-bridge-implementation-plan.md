@@ -221,6 +221,7 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 - `nova`は現在利用中のRealtime sessionでは`invalid_value`として拒否されたため、設定検証で未対応voiceを起動前に検出する。
 - `openai.maxOutputTokens`の初期値を`60`へ下げ、AI音声が長くなりすぎて送信queueを圧迫する状態を抑制する。
 - outbound queue capacityを500 frameから1000 frameへ増やし、OpenAI audio deltaが短時間にまとめて到着する場合のdropを抑制する。
+- outbound queue dropがない状態でもOpenAI audio deltaの到着間隔に揺れがあるため、RTP送出開始前に8 frame、約160 ms分の小さな再生バッファを持つ。
 
 ### Step 5: PCMU最適化
 
