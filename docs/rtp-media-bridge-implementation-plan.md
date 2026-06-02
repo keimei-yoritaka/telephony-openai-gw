@@ -211,6 +211,11 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 - `input_audio_buffer.speech_started`を受信した場合、未送出のoutbound音声を破棄し、進行中responseがあれば`response.cancel`を送る。
 - bot instructionsには「原則1文、最大2文」「相手が話し終わるまで待つ」「柔らかく落ち着いた女性的な声の印象」を明示する。
 
+実通話確認後の追加調整:
+
+- `response.done`後もRTP再生待ちのoutbound音声が残るため、`speech_started`検知時のoutbound音声破棄は、OpenAI responseがまだactiveな場合に限定する。
+- SIP call切断後にOpenAI responseが生成されてもRTPへ返せないため、call session close通知で該当Realtime sessionを即時closeする。
+
 ### Step 5: PCMU最適化
 
 目的:

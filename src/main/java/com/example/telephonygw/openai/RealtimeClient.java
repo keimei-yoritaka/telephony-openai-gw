@@ -75,6 +75,22 @@ public final class RealtimeClient implements AutoCloseable {
         return session;
     }
 
+    public void closeSession(String callSessionId, String reason) {
+        RealtimeSession session = sessions.remove(callSessionId);
+        retryNotBeforeNanos.remove(callSessionId);
+        int clearedFrames = audioBridge.clearOutbound(callSessionId);
+        if (session != null) {
+            session.close();
+            LOG.log(System.Logger.Level.INFO,
+                    "Closed OpenAI Realtime session for call close: sessionId={0}, reason={1}, clearedOutboundFrames={2}",
+                    callSessionId, reason, clearedFrames);
+        } else if (clearedFrames > 0) {
+            LOG.log(System.Logger.Level.INFO,
+                    "Cleared outbound audio for closed call without active OpenAI session: sessionId={0}, reason={1}, clearedOutboundFrames={2}",
+                    callSessionId, reason, clearedFrames);
+        }
+    }
+
     @Override
     public void close() {
         if (initialized.compareAndSet(true, false)) {

@@ -331,11 +331,13 @@ public final class RealtimeSession implements AutoCloseable {
         }
 
         private void handleUserSpeechStarted(WebSocket webSocket) {
-            int clearedFrames = audioBridge.clearOutbound(callSessionId);
-            synchronized (pendingOutputPcm8) {
-                pendingOutputPcm8.reset();
-            }
-            if (responseActive.compareAndSet(true, false)) {
+            boolean wasResponseActive = responseActive.compareAndSet(true, false);
+            int clearedFrames = 0;
+            if (wasResponseActive) {
+                clearedFrames = audioBridge.clearOutbound(callSessionId);
+                synchronized (pendingOutputPcm8) {
+                    pendingOutputPcm8.reset();
+                }
                 webSocket.sendText("{\"type\":\"response.cancel\"}", true)
                         .orTimeout(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                         .exceptionally(error -> {
