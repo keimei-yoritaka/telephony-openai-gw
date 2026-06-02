@@ -205,7 +205,7 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 
 会話制御の追加調整:
 
-- `openai.voice`を設定ファイル化し、初期値を`shimmer`とする。
+- `openai.voice`を設定ファイル化し、Realtime session updateでは`audio.output.voice`へ設定する。初期値は`shimmer`とする。
 - `openai.maxOutputTokens`を設定ファイル化し、初期値を`120`として応答を短めに制限する。
 - `openai.turnDetectionType`を`semantic_vad`、`openai.turnDetectionEagerness`を`low`として、ユーザー発話完了を急いで判定しすぎない設定にする。
 - `input_audio_buffer.speech_started`を受信した場合、未送出のoutbound音声を破棄し、進行中responseがあれば`response.cancel`を送る。

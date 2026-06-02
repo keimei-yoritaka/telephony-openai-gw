@@ -142,9 +142,9 @@ public final class RealtimeSession implements AutoCloseable {
 
     private String sessionUpdateEvent() {
         return """
-                {"type":"session.update","session":{"type":"realtime","model":"%s","voice":"%s","instructions":"%s","max_output_tokens":%d,"output_modalities":["audio"],"audio":{"input":{"format":{"type":"audio/pcm","rate":%d},"turn_detection":%s},"output":{"format":{"type":"audio/pcm","rate":%d}}}}}\
-                """.formatted(json(model), json(voice), json(systemInstructions), maxOutputTokens,
-                OPENAI_AUDIO_SAMPLE_RATE_HZ, turnDetectionJson(), OPENAI_AUDIO_SAMPLE_RATE_HZ);
+                {"type":"session.update","session":{"type":"realtime","model":"%s","instructions":"%s","max_output_tokens":%d,"output_modalities":["audio"],"audio":{"input":{"format":{"type":"audio/pcm","rate":%d},"turn_detection":%s},"output":{"format":{"type":"audio/pcm","rate":%d},"voice":"%s"}}}}\
+                """.formatted(json(model), json(systemInstructions), maxOutputTokens,
+                OPENAI_AUDIO_SAMPLE_RATE_HZ, turnDetectionJson(), OPENAI_AUDIO_SAMPLE_RATE_HZ, json(voice));
     }
 
     private String turnDetectionJson() {
@@ -221,11 +221,19 @@ public final class RealtimeSession implements AutoCloseable {
                 message.setLength(0);
                 String eventType = extractEventType(payload);
                 if (eventType.equals("error")) {
+                    String code = extractStringField(payload, "code", 0);
+                    if (code.equals("response_cancel_not_active")) {
+                        LOG.log(System.Logger.Level.DEBUG,
+                                "Ignored inactive OpenAI response cancel: sessionId={0}, message={1}",
+                                callSessionId,
+                                extractStringField(payload, "message", 0));
+                        return WebSocket.Listener.super.onText(webSocket, data, last);
+                    }
                     LOG.log(System.Logger.Level.WARNING,
                             "Received OpenAI Realtime error event: sessionId={0}, errorType={1}, code={2}, message={3}",
                             callSessionId,
                             extractStringField(payload, "type", payload.indexOf("\"error\"")),
-                            extractStringField(payload, "code", 0),
+                            code,
                             extractStringField(payload, "message", 0));
                     return WebSocket.Listener.super.onText(webSocket, data, last);
                 }
