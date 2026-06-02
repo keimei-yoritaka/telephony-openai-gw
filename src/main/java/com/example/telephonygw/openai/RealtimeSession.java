@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class RealtimeSession implements AutoCloseable {
     private static final System.Logger LOG = System.getLogger(RealtimeSession.class.getName());
     private static final URI REALTIME_ENDPOINT = URI.create("wss://api.openai.com/v1/realtime");
-    private static final int OPENAI_INPUT_SAMPLE_RATE_HZ = 24000;
+    private static final int OPENAI_AUDIO_SAMPLE_RATE_HZ = 24000;
     private static final int CONNECT_TIMEOUT_SECONDS = 10;
     private static final int SEND_TIMEOUT_SECONDS = 5;
 
@@ -55,7 +55,7 @@ public final class RealtimeSession implements AutoCloseable {
             sendText(sessionUpdateEvent());
             LOG.log(System.Logger.Level.INFO,
                     "Opened OpenAI Realtime session: sessionId={0}, model={1}, inputRateHz={2}",
-                    callSessionId, model, OPENAI_INPUT_SAMPLE_RATE_HZ);
+                    callSessionId, model, OPENAI_AUDIO_SAMPLE_RATE_HZ);
         } catch (Exception e) {
             open.set(false);
             throw new IllegalStateException("Failed to open OpenAI Realtime WebSocket session", e);
@@ -67,7 +67,7 @@ public final class RealtimeSession implements AutoCloseable {
             return false;
         }
         try {
-            byte[] audio = Pcm16Resampler.upsample(frame.payload(), frame.sampleRateHz(), OPENAI_INPUT_SAMPLE_RATE_HZ);
+            byte[] audio = Pcm16Resampler.upsample(frame.payload(), frame.sampleRateHz(), OPENAI_AUDIO_SAMPLE_RATE_HZ);
             String encoded = Base64.getEncoder().encodeToString(audio);
             sendText("{\"type\":\"input_audio_buffer.append\",\"audio\":\"" + encoded + "\"}");
             sentFrames.incrementAndGet();
@@ -112,8 +112,8 @@ public final class RealtimeSession implements AutoCloseable {
 
     private String sessionUpdateEvent() {
         return """
-                {"type":"session.update","session":{"type":"realtime","model":"%s","instructions":"%s","output_modalities":["audio"],"audio":{"input":{"format":{"type":"audio/pcm","rate":%d},"turn_detection":{"type":"server_vad"}},"output":{"format":{"type":"audio/pcm"}}}}}\
-                """.formatted(json(model), json(systemInstructions), OPENAI_INPUT_SAMPLE_RATE_HZ);
+                {"type":"session.update","session":{"type":"realtime","model":"%s","instructions":"%s","output_modalities":["audio"],"audio":{"input":{"format":{"type":"audio/pcm","rate":%d},"turn_detection":{"type":"server_vad"}},"output":{"format":{"type":"audio/pcm","rate":%d}}}}}\
+                """.formatted(json(model), json(systemInstructions), OPENAI_AUDIO_SAMPLE_RATE_HZ, OPENAI_AUDIO_SAMPLE_RATE_HZ);
     }
 
     private static String json(String value) {

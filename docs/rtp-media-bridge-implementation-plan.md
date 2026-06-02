@@ -400,6 +400,7 @@ Step 3として、inbound audio queueを消費し、OpenAI Realtime APIへ音声
 - PJSUA2側: PCMUでRTP negotiation。
 - Java queue側: PCM16 8 kHz / mono / 20 ms。
 - OpenAI Realtime入力側: PCM16 24 kHz / mono。
+- OpenAI Realtime出力側: PCM16 24 kHz / mono。
 
 期待ログ:
 
