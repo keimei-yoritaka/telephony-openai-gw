@@ -128,7 +128,25 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
         Object credential = newAuthCredential();
         invoke(authCreds, "add", credential);
 
+        configureAccountMedia(accountConfig);
+
         return accountConfig;
+    }
+
+    private void configureAccountMedia(Object accountConfig) throws ReflectiveOperationException {
+        Object mediaConfig = invoke(accountConfig, "getMediaConfig");
+        Object mediaTransportConfig = invoke(mediaConfig, "getTransportConfig");
+        invoke(mediaTransportConfig, "setBoundAddress", sipConfig.bindAddress());
+        if (!sipConfig.publicContactAddress().isBlank()) {
+            invoke(mediaTransportConfig, "setPublicAddress", sipConfig.publicContactAddress());
+        }
+        invoke(mediaConfig, "setTransportConfig", mediaTransportConfig);
+        invoke(mediaConfig, "setStreamKaEnabled", true);
+
+        LOG.log(System.Logger.Level.INFO,
+                "Configured PJSUA2 media transport NAT advertisement: publicAddress={0}, bindAddress={1}, streamKeepAlive=true",
+                sipConfig.publicContactAddress().isBlank() ? "(auto)" : sipConfig.publicContactAddress(),
+                sipConfig.bindAddress());
     }
 
     private Object newAccount() throws ReflectiveOperationException {

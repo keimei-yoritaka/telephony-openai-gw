@@ -229,6 +229,14 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 - `response.output_audio.done`または`response.done`受信後は、再生開始バッファ量に満たない残りframeでもRTPへdrainする。これにより、AI音声の末尾がqueue内に残ったまま無音送出へ戻る状態を避ける。
 - OpenAIへ送るinput audioが空byteの場合は`input_audio_buffer.append`を送信しない。切断付近の空音声frameによる`invalid_value` errorを抑制する。
 
+別ネットワーク/NAT配下でのRTP到達性調整:
+
+- UACとUASが同一NAT配下にいる場合はprivate addressのSDPでも通話できるが、別ネットワークでは200 OK SDPの`c=`にprivate addressが入ると相手側からRTP到達できない。
+- STUN/ICEは使わず、通常のSIP UAと同様に、設定ファイルの`publicContactAddress`をNAT/routerのexternal側IPまたは名前として扱う。
+- `publicContactAddress`が指定された場合、SIP transportのadvertised addressに加えて、Account media transportの`publicAddress`にも同じ値を設定する。これにより、200 OK SDPのmedia addressもNAT外側アドレスになる。
+- `streamKaEnabled`を有効化し、RTP/RTCP media transportのNAT binding維持を補助する。
+- STUN/ICEを使わないため、NAT/router側では少なくともPJSIPが利用するRTP/RTCPポート範囲がUASへ到達できる必要がある。必要に応じてRTP port rangeを固定化する設定を追加する。
+
 ### Step 5: PCMU最適化
 
 目的:

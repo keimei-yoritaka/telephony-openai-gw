@@ -5,6 +5,8 @@ sip:
   transport: UDP
   ipVersion: IPv4
   codec: PCMU
+  # NAT配下から外部ネットワークへ公開するSIP ContactおよびSDP media c=用のアドレス。
+  # STUN/ICEを使わない場合、router/NATのexternal側IPまたは名前を指定する。
   publicContactAddress: ""
 
 registration:
