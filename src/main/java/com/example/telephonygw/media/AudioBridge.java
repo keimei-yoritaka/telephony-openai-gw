@@ -2,6 +2,7 @@ package com.example.telephonygw.media;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -14,6 +15,7 @@ public final class AudioBridge {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AudioQueue inboundQueue = new AudioQueue("inbound", DEFAULT_QUEUE_CAPACITY);
     private final Map<String, AudioQueue> outboundQueues = new ConcurrentHashMap<>();
+    private final Set<String> outboundCompleteSessions = ConcurrentHashMap.newKeySet();
     private final AtomicLong inboundSequence = new AtomicLong();
     private final AtomicLong outboundSequence = new AtomicLong();
 
@@ -66,6 +68,7 @@ public final class AudioBridge {
     }
 
     public int clearOutbound(String sessionId) {
+        clearOutboundComplete(sessionId);
         AudioQueue queue = outboundQueues.get(sessionId);
         if (queue == null) {
             return 0;
@@ -73,6 +76,22 @@ public final class AudioBridge {
         int depth = queue.depth();
         queue.clear();
         return depth;
+    }
+
+    public void markOutboundActive(String sessionId) {
+        outboundCompleteSessions.remove(sessionId);
+    }
+
+    public void markOutboundComplete(String sessionId) {
+        outboundCompleteSessions.add(sessionId);
+    }
+
+    public boolean isOutboundComplete(String sessionId) {
+        return outboundCompleteSessions.contains(sessionId);
+    }
+
+    public void clearOutboundComplete(String sessionId) {
+        outboundCompleteSessions.remove(sessionId);
     }
 
     public void stop() {
@@ -92,6 +111,7 @@ public final class AudioBridge {
                     outboundOffered, outboundDropped, outboundDepth);
             inboundQueue.clear();
             outboundQueues.clear();
+            outboundCompleteSessions.clear();
         }
     }
 

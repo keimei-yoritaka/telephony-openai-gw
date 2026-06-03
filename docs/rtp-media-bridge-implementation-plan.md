@@ -222,6 +222,8 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 - `openai.maxOutputTokens`の初期値を`60`へ下げ、AI音声が長くなりすぎて送信queueを圧迫する状態を抑制する。
 - outbound queue capacityを500 frameから1000 frameへ増やし、OpenAI audio deltaが短時間にまとめて到着する場合のdropを抑制する。
 - outbound queue dropがない状態でもOpenAI audio deltaの到着間隔に揺れがあるため、RTP送出開始前に8 frame、約160 ms分の小さな再生バッファを持つ。
+- `response.output_audio.done`または`response.done`受信後は、再生開始バッファ量に満たない残りframeでもRTPへdrainする。これにより、AI音声の末尾がqueue内に残ったまま無音送出へ戻る状態を避ける。
+- OpenAIへ送るinput audioが空byteの場合は`input_audio_buffer.append`を送信しない。切断付近の空音声frameによる`invalid_value` errorを抑制する。
 
 ### Step 5: PCMU最適化
 

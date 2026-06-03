@@ -95,8 +95,20 @@ public final class RealtimeSession implements AutoCloseable {
         if (!open.get() || webSocket == null) {
             return false;
         }
+        if (frame.payload().length == 0) {
+            LOG.log(System.Logger.Level.DEBUG,
+                    "Skipped empty audio frame for OpenAI Realtime session: sessionId={0}",
+                    callSessionId);
+            return false;
+        }
         try {
             byte[] audio = Pcm16Resampler.upsample(frame.payload(), frame.sampleRateHz(), OPENAI_AUDIO_SAMPLE_RATE_HZ);
+            if (audio.length == 0) {
+                LOG.log(System.Logger.Level.DEBUG,
+                        "Skipped empty resampled audio for OpenAI Realtime session: sessionId={0}",
+                        callSessionId);
+                return false;
+            }
             String encoded = Base64.getEncoder().encodeToString(audio);
             sendText("{\"type\":\"input_audio_buffer.append\",\"audio\":\"" + encoded + "\"}");
             sentFrames.incrementAndGet();
@@ -243,8 +255,12 @@ public final class RealtimeSession implements AutoCloseable {
                     handleUserSpeechStarted(webSocket);
                 } else if (eventType.equals("response.created")) {
                     responseActive.set(true);
+                    audioBridge.markOutboundActive(callSessionId);
+                } else if (eventType.equals("response.output_audio.done")) {
+                    audioBridge.markOutboundComplete(callSessionId);
                 } else if (eventType.equals("response.done")) {
                     responseActive.set(false);
+                    audioBridge.markOutboundComplete(callSessionId);
                 }
                 if (shouldLog(eventType)) {
                     LOG.log(System.Logger.Level.INFO,

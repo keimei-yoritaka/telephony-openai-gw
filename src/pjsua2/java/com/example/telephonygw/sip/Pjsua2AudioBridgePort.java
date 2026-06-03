@@ -63,7 +63,12 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
     @Override
     public void onFrameRequested(MediaFrame frame) {
         int depthBeforePoll = audioBridge.outboundDepth(sessionId);
-        if (!outboundPlaying && depthBeforePoll < OUTBOUND_START_BUFFER_FRAMES) {
+        boolean outboundComplete = audioBridge.isOutboundComplete(sessionId);
+        if (!outboundPlaying && depthBeforePoll == 0) {
+            provideFrame(frame, new byte[FRAME_BYTES], true);
+            return;
+        }
+        if (!outboundPlaying && depthBeforePoll < OUTBOUND_START_BUFFER_FRAMES && !outboundComplete) {
             provideFrame(frame, new byte[FRAME_BYTES], true);
             return;
         }
@@ -71,14 +76,17 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         if (!outboundPlaying) {
             outboundPlaying = true;
             LOG.log(System.Logger.Level.INFO,
-                    "Started outbound RTP audio playout: sessionId={0}, callId={1}, bufferedFrames={2}",
-                    sessionId, callId, depthBeforePoll);
+                    "Started outbound RTP audio playout: sessionId={0}, callId={1}, bufferedFrames={2}, outputComplete={3}",
+                    sessionId, callId, depthBeforePoll, outboundComplete);
         }
 
         AudioFrame outbound = audioBridge.pollOutbound(sessionId);
         byte[] payload;
         if (outbound == null) {
             outboundPlaying = false;
+            if (outboundComplete) {
+                audioBridge.clearOutboundComplete(sessionId);
+            }
             payload = new byte[FRAME_BYTES];
             provideFrame(frame, payload, true);
         } else {
