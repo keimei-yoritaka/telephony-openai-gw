@@ -10,19 +10,30 @@ import org.pjsip.pjsua2.OnRegStateParam;
 import org.pjsip.pjsua2.pjsip_status_code;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class Pjsua2Account extends Account {
     private static final System.Logger LOG = System.getLogger(Pjsua2Account.class.getName());
+    private static final Pattern RECEIVED_PATTERN = Pattern.compile("(?i)(?:^|;)\\s*received=([^;\\s]+)");
+    private static final Pattern RPORT_PATTERN = Pattern.compile("(?i)(?:^|;)\\s*rport=([0-9]+)");
 
     private final CallSessionManager sessionManager;
     private final AudioBridge audioBridge;
+    private final RegistrationAddressObserver registrationAddressObserver;
     private final Map<Integer, Pjsua2Call> activeCalls = new ConcurrentHashMap<>();
 
-    public Pjsua2Account(CallSessionManager sessionManager, AudioBridge audioBridge) {
+    public Pjsua2Account(
+            CallSessionManager sessionManager,
+            AudioBridge audioBridge,
+            RegistrationAddressObserver registrationAddressObserver
+    ) {
         super();
         this.sessionManager = sessionManager;
         this.audioBridge = audioBridge;
+        this.registrationAddressObserver = registrationAddressObserver;
     }
 
     @Override
@@ -30,6 +41,11 @@ public final class Pjsua2Account extends Account {
         LOG.log(System.Logger.Level.INFO,
                 "SIP Registration state changed: code={0}, reason={1}, expiration={2}",
                 prm.getCode(), prm.getReason(), prm.getExpiration());
+        if (prm.getCode() >= 200 && prm.getCode() < 300) {
+            extractReflexiveAddress(prm).ifPresent(address ->
+                    registrationAddressObserver.onRegistrationReflexiveAddressDetected(
+                            address.publicAddress(), address.publicPort()));
+        }
     }
 
     @Override
@@ -72,5 +88,43 @@ public final class Pjsua2Account extends Account {
         } finally {
             call.delete();
         }
+    }
+
+    private static Optional<ReflexiveAddress> extractReflexiveAddress(OnRegStateParam prm) {
+        try {
+            String message = prm.getRdata().getWholeMsg();
+            if (message == null || message.isBlank()) {
+                return Optional.empty();
+            }
+            String via = firstHeaderValue(message, "Via")
+                    .or(() -> firstHeaderValue(message, "V"))
+                    .orElse("");
+            Matcher received = RECEIVED_PATTERN.matcher(via);
+            if (!received.find()) {
+                return Optional.empty();
+            }
+            Matcher rport = RPORT_PATTERN.matcher(via);
+            int publicPort = rport.find() ? Integer.parseInt(rport.group(1)) : -1;
+            return Optional.of(new ReflexiveAddress(received.group(1), publicPort));
+        } catch (RuntimeException e) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "Failed to parse SIP Registration reflexive address from rport/received: {0}",
+                    e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<String> firstHeaderValue(String message, String headerName) {
+        String prefix = headerName.toLowerCase() + ":";
+        for (String line : message.split("\\R")) {
+            String trimmed = line.trim();
+            if (trimmed.toLowerCase().startsWith(prefix)) {
+                return Optional.of(trimmed.substring(headerName.length() + 1).trim());
+            }
+        }
+        return Optional.empty();
+    }
+
+    private record ReflexiveAddress(String publicAddress, int publicPort) {
     }
 }

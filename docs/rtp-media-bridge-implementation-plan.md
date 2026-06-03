@@ -232,8 +232,10 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 別ネットワーク/NAT配下でのRTP到達性調整:
 
 - UACとUASが同一NAT配下にいる場合はprivate addressのSDPでも通話できるが、別ネットワークでは200 OK SDPの`c=`にprivate addressが入ると相手側からRTP到達できない。
-- STUN/ICEは使わず、通常のSIP UAと同様に、設定ファイルの`publicContactAddress`をNAT/routerのexternal側IPまたは名前として扱う。
-- `publicContactAddress`が指定された場合、SIP transportのadvertised addressに加えて、Account media transportの`publicAddress`にも同じ値を設定する。これにより、200 OK SDPのmedia addressもNAT外側アドレスになる。
+- STUN/ICEは使わず、通常のSIP UAと同様に、REGISTER応答のVia `received` / `rport`からSIP signalingのNAT external側IPとportを検出する。
+- `publicContactAddress`が空の場合は、検出したNAT external側IPをAccount media transportの`publicAddress`へ反映する。これにより、以降の200 OK SDPのmedia addressもNAT外側アドレスになる。
+- `publicContactAddress`が指定された場合は、手動設定を優先し、SIP transportおよびAccount media transportの`publicAddress`へ同じ値を設定する。
+- Via `rport`で検出できるportはSIP signaling用portであり、RTP media portではない。そのため、SDPの`c=`用IPの自動検出には使うが、SDPの`m=` portの外側port検出には使わない。
 - `streamKaEnabled`を有効化し、RTP/RTCP media transportのNAT binding維持を補助する。
 - STUN/ICEを使わないため、NAT/router側では少なくともPJSIPが利用するRTP/RTCPポート範囲がUASへ到達できる必要がある。必要に応じてRTP port rangeを固定化する設定を追加する。
 

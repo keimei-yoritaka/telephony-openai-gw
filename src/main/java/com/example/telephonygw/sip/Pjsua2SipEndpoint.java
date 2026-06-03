@@ -8,9 +8,11 @@ import com.example.telephonygw.session.CallSessionManager;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
-final class Pjsua2SipEndpoint implements SipEndpointAdapter {
+final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddressObserver {
     private static final System.Logger LOG = System.getLogger(Pjsua2SipEndpoint.class.getName());
 
     private final SipConfig sipConfig;
@@ -19,6 +21,7 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
     private final AudioBridge audioBridge;
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean eventsRunning = new AtomicBoolean(false);
+    private final AtomicReference<String> detectedPublicAddress = new AtomicReference<>();
 
     private Object endpoint;
     private Object account;
@@ -51,8 +54,8 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
             Object transportConfig = newInstance("org.pjsip.pjsua2.TransportConfig");
             invoke(transportConfig, "setPort", (long) sipConfig.port());
             invoke(transportConfig, "setBoundAddress", sipConfig.bindAddress());
-            if (!sipConfig.publicContactAddress().isBlank()) {
-                invoke(transportConfig, "setPublicAddress", sipConfig.publicContactAddress());
+            if (!configuredPublicAddress().isBlank()) {
+                invoke(transportConfig, "setPublicAddress", configuredPublicAddress());
             }
 
             int udpTransport = staticInt("org.pjsip.pjsua2.pjsip_transport_type_e", "PJSIP_TRANSPORT_UDP");
@@ -89,6 +92,24 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Failed to create PJSUA2 account for SIP Registration.", e);
         }
+    }
+
+    @Override
+    public void onRegistrationReflexiveAddressDetected(String publicAddress, int publicPort) {
+        if (!configuredPublicAddress().isBlank()) {
+            LOG.log(System.Logger.Level.INFO,
+                    "Detected SIP Registration reflexive address {0}:{1}, keeping configured public address {2}",
+                    publicAddress, publicPort, configuredPublicAddress());
+            return;
+        }
+        String previous = detectedPublicAddress.getAndSet(publicAddress);
+        if (Objects.equals(previous, publicAddress)) {
+            return;
+        }
+        LOG.log(System.Logger.Level.INFO,
+                "Detected SIP Registration reflexive address from Via rport/received: publicAddress={0}, publicPort={1}",
+                publicAddress, publicPort);
+        applyDetectedPublicAddress(publicAddress);
     }
 
     @Override
@@ -137,23 +158,43 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
         Object mediaConfig = invoke(accountConfig, "getMediaConfig");
         Object mediaTransportConfig = invoke(mediaConfig, "getTransportConfig");
         invoke(mediaTransportConfig, "setBoundAddress", sipConfig.bindAddress());
-        if (!sipConfig.publicContactAddress().isBlank()) {
-            invoke(mediaTransportConfig, "setPublicAddress", sipConfig.publicContactAddress());
+        String publicAddress = effectivePublicAddress();
+        if (!publicAddress.isBlank()) {
+            invoke(mediaTransportConfig, "setPublicAddress", publicAddress);
         }
         invoke(mediaConfig, "setTransportConfig", mediaTransportConfig);
         invoke(mediaConfig, "setStreamKaEnabled", true);
 
         LOG.log(System.Logger.Level.INFO,
                 "Configured PJSUA2 media transport NAT advertisement: publicAddress={0}, bindAddress={1}, streamKeepAlive=true",
-                sipConfig.publicContactAddress().isBlank() ? "(auto)" : sipConfig.publicContactAddress(),
+                publicAddress.isBlank() ? "(auto)" : publicAddress,
                 sipConfig.bindAddress());
+    }
+
+    private void applyDetectedPublicAddress(String publicAddress) {
+        Object currentAccount = account;
+        if (currentAccount == null) {
+            return;
+        }
+        registerCurrentThread("pjsua2-registration-address-update");
+        try {
+            Object accountConfig = buildAccountConfig();
+            invoke(currentAccount, "modify", accountConfig);
+            LOG.log(System.Logger.Level.INFO,
+                    "Updated PJSUA2 account media public address from SIP Registration reflexive address: publicAddress={0}",
+                    publicAddress);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "Failed to update PJSUA2 account media public address from SIP Registration reflexive address {0}: {1}",
+                    publicAddress, e.getMessage());
+        }
     }
 
     private Object newAccount() throws ReflectiveOperationException {
         try {
             Constructor<?> constructor = clazz("com.example.telephonygw.sip.Pjsua2Account")
-                    .getConstructor(CallSessionManager.class, AudioBridge.class);
-            return constructor.newInstance(sessionManager, audioBridge);
+                    .getConstructor(CallSessionManager.class, AudioBridge.class, RegistrationAddressObserver.class);
+            return constructor.newInstance(sessionManager, audioBridge, this);
         } catch (ClassNotFoundException e) {
             LOG.log(System.Logger.Level.WARNING,
                     "PJSUA2 account callback class is not available. Incoming INVITE may be rejected by PJSIP.");
@@ -176,6 +217,19 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter {
         return "sip:" + registrationConfig.registryServerAddress()
                 + ":" + registrationConfig.registryServerPort()
                 + ";transport=udp";
+    }
+
+    private String configuredPublicAddress() {
+        return sipConfig.publicContactAddress();
+    }
+
+    private String effectivePublicAddress() {
+        String configured = configuredPublicAddress();
+        if (!configured.isBlank()) {
+            return configured;
+        }
+        String detected = detectedPublicAddress.get();
+        return detected == null ? "" : detected;
     }
 
     private void preferPcmuCodec() {
