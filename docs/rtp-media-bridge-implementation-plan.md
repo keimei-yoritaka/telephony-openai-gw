@@ -219,7 +219,9 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 音声途切れ確認後の追加調整:
 
 - `nova`は現在利用中のRealtime sessionでは`invalid_value`として拒否されたため、設定検証で未対応voiceを起動前に検出する。
-- `openai.maxOutputTokens`の初期値を`60`へ下げ、AI音声が長くなりすぎて送信queueを圧迫する状態を抑制する。
+- `openai.maxOutputTokens`を一時的に`60`へ下げたが、実通話では2〜3秒程度でAI音声が途切れる症状が出た。outbound queue dropはなく、生成されたframeは全量RTPへ送出されていたため、`max_output_tokens`による応答打ち切りの可能性が高い。
+- `openai.maxOutputTokens`の初期値を`200`へ戻し、短い電話応答を維持しつつ、token上限による不自然な音声途切れを避ける。
+- `response.done`の`status` / `status_details`、応答単位のOpenAI音声chunk数、RTP投入frame数、音声msをログ出力し、次回実通話で打ち切り原因を確認できるようにする。
 - outbound queue capacityを500 frameから1000 frameへ増やし、OpenAI audio deltaが短時間にまとめて到着する場合のdropを抑制する。
 - outbound queue dropがない状態でもOpenAI audio deltaの到着間隔に揺れがあるため、RTP送出開始前に8 frame、約160 ms分の小さな再生バッファを持つ。
 - `response.output_audio.done`または`response.done`受信後は、再生開始バッファ量に満たない残りframeでもRTPへdrainする。これにより、AI音声の末尾がqueue内に残ったまま無音送出へ戻る状態を避ける。

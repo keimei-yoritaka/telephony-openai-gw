@@ -34,7 +34,7 @@ public final class GatewayConfigLoader {
                         value(values, "openai.apiKey"),
                         value(values, "openai.realtimeModel"),
                         optionalValue(values, "openai.voice", "shimmer"),
-                        intValue(values, "openai.maxOutputTokens", 120),
+                        intValue(values, "openai.maxOutputTokens", 200),
                         optionalValue(values, "openai.turnDetectionType", "semantic_vad"),
                         optionalValue(values, "openai.turnDetectionEagerness", "low")
                 ),

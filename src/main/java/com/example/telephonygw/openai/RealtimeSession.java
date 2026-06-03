@@ -202,6 +202,9 @@ public final class RealtimeSession implements AutoCloseable {
         private final AtomicLong queuedOutputFrames;
         private final AtomicBoolean responseActive = new AtomicBoolean(false);
         private final StringBuilder message = new StringBuilder();
+        private long currentResponseChunks;
+        private long currentResponsePcm24Bytes;
+        private long currentResponseQueuedFrames;
 
         private SessionListener(
                 String callSessionId,
@@ -256,11 +259,26 @@ public final class RealtimeSession implements AutoCloseable {
                 } else if (eventType.equals("response.created")) {
                     responseActive.set(true);
                     audioBridge.markOutboundActive(callSessionId);
+                    resetCurrentResponseStats();
                 } else if (eventType.equals("response.output_audio.done")) {
                     audioBridge.markOutboundComplete(callSessionId);
+                    LOG.log(System.Logger.Level.INFO,
+                            "OpenAI output audio completed: sessionId={0}, responseChunks={1}, responsePcm24Bytes={2}, responseQueuedFrames={3}, responseAudioMs={4}, pendingBytes={5}, outboundDepth={6}",
+                            callSessionId, currentResponseChunks, currentResponsePcm24Bytes,
+                            currentResponseQueuedFrames,
+                            currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
+                            pendingOutputPcm8.size(), audioBridge.outboundDepth(callSessionId));
                 } else if (eventType.equals("response.done")) {
                     responseActive.set(false);
                     audioBridge.markOutboundComplete(callSessionId);
+                    LOG.log(System.Logger.Level.INFO,
+                            "OpenAI response done details: sessionId={0}, status={1}, statusDetails={2}, responseQueuedFrames={3}, responseAudioMs={4}, outboundDepth={5}",
+                            callSessionId,
+                            extractStringField(payload, "status", 0),
+                            extractJsonFieldSnippet(payload, "status_details"),
+                            currentResponseQueuedFrames,
+                            currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
+                            audioBridge.outboundDepth(callSessionId));
                 }
                 if (shouldLog(eventType)) {
                     LOG.log(System.Logger.Level.INFO,
@@ -322,6 +340,8 @@ public final class RealtimeSession implements AutoCloseable {
             byte[] pcm24 = Base64.getDecoder().decode(delta);
             byte[] pcm8 = Pcm16Resampler.downsample(pcm24, OPENAI_AUDIO_SAMPLE_RATE_HZ, RTP_AUDIO_SAMPLE_RATE_HZ);
             receivedOutputChunks.incrementAndGet();
+            currentResponseChunks++;
+            currentResponsePcm24Bytes += pcm24.length;
             synchronized (pendingOutputPcm8) {
                 pendingOutputPcm8.writeBytes(pcm8);
                 byte[] buffered = pendingOutputPcm8.toByteArray();
@@ -332,6 +352,7 @@ public final class RealtimeSession implements AutoCloseable {
                     offset += RTP_FRAME_BYTES;
                     if (audioBridge.enqueueOutboundPcm16(callSessionId, frame, RTP_AUDIO_SAMPLE_RATE_HZ, RTP_FRAME_DURATION_MS)) {
                         long count = queuedOutputFrames.incrementAndGet();
+                        currentResponseQueuedFrames++;
                         if (count == 1 || count % 250 == 0) {
                             LOG.log(System.Logger.Level.INFO,
                                     "Queued OpenAI output audio frame for RTP: sessionId={0}, frames={1}, outboundDepth={2}",
@@ -343,6 +364,15 @@ public final class RealtimeSession implements AutoCloseable {
                 if (offset < buffered.length) {
                     pendingOutputPcm8.write(buffered, offset, buffered.length - offset);
                 }
+            }
+        }
+
+        private void resetCurrentResponseStats() {
+            currentResponseChunks = 0;
+            currentResponsePcm24Bytes = 0;
+            currentResponseQueuedFrames = 0;
+            synchronized (pendingOutputPcm8) {
+                pendingOutputPcm8.reset();
             }
         }
 
@@ -384,6 +414,93 @@ public final class RealtimeSession implements AutoCloseable {
                 return "unknown";
             }
             return unescapeJsonString(payload.substring(quoteStart + 1, quoteEnd));
+        }
+
+        private static String extractJsonFieldSnippet(String payload, String fieldName) {
+            String marker = "\"" + fieldName + "\"";
+            int markerIndex = payload.indexOf(marker);
+            if (markerIndex < 0) {
+                return "unknown";
+            }
+            int colonIndex = payload.indexOf(':', markerIndex + marker.length());
+            if (colonIndex < 0) {
+                return "unknown";
+            }
+            int valueStart = skipWhitespace(payload, colonIndex + 1);
+            if (valueStart >= payload.length()) {
+                return "unknown";
+            }
+            char first = payload.charAt(valueStart);
+            int valueEnd;
+            if (first == '"') {
+                valueEnd = findStringEnd(payload, valueStart + 1);
+                if (valueEnd < 0) {
+                    return "unknown";
+                }
+                return limitSnippet(unescapeJsonString(payload.substring(valueStart + 1, valueEnd)));
+            }
+            if (first == '{' || first == '[') {
+                valueEnd = findJsonContainerEnd(payload, valueStart);
+                if (valueEnd < 0) {
+                    return "unknown";
+                }
+                return limitSnippet(payload.substring(valueStart, valueEnd + 1));
+            }
+            valueEnd = valueStart;
+            while (valueEnd < payload.length()) {
+                char c = payload.charAt(valueEnd);
+                if (c == ',' || c == '}') {
+                    break;
+                }
+                valueEnd++;
+            }
+            return limitSnippet(payload.substring(valueStart, valueEnd).trim());
+        }
+
+        private static int skipWhitespace(String value, int fromIndex) {
+            int index = fromIndex;
+            while (index < value.length() && Character.isWhitespace(value.charAt(index))) {
+                index++;
+            }
+            return index;
+        }
+
+        private static int findJsonContainerEnd(String payload, int fromIndex) {
+            char open = payload.charAt(fromIndex);
+            char close = open == '{' ? '}' : ']';
+            int depth = 0;
+            boolean inString = false;
+            boolean escaped = false;
+            for (int i = fromIndex; i < payload.length(); i++) {
+                char c = payload.charAt(i);
+                if (inString) {
+                    if (escaped) {
+                        escaped = false;
+                    } else if (c == '\\') {
+                        escaped = true;
+                    } else if (c == '"') {
+                        inString = false;
+                    }
+                    continue;
+                }
+                if (c == '"') {
+                    inString = true;
+                } else if (c == open) {
+                    depth++;
+                } else if (c == close) {
+                    depth--;
+                    if (depth == 0) {
+                        return i;
+                    }
+                }
+            }
+            return -1;
+        }
+
+        private static String limitSnippet(String value) {
+            String compact = value.replace('\n', ' ').replace('\r', ' ');
+            int maxLength = 240;
+            return compact.length() <= maxLength ? compact : compact.substring(0, maxLength) + "...";
         }
 
         private static int findStringEnd(String payload, int fromIndex) {
