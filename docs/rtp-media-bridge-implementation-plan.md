@@ -206,7 +206,7 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 会話制御の追加調整:
 
 - `openai.voice`を設定ファイル化し、Realtime session updateでは`audio.output.voice`へ設定する。初期値は`shimmer`とする。
-- `openai.maxOutputTokens`を設定ファイル化し、初期値を`120`として応答を短めに制限する。
+- `openai.maxOutputTokens`を設定ファイル化し、整数または`inf`を指定できるようにする。
 - `openai.turnDetectionType`を`semantic_vad`、`openai.turnDetectionEagerness`を`low`として、ユーザー発話完了を急いで判定しすぎない設定にする。
 - `input_audio_buffer.speech_started`を受信した場合、未送出のoutbound音声を破棄し、進行中responseがあれば`response.cancel`を送る。
 - bot instructionsには「原則1文、最大2文」「相手が話し終わるまで待つ」「柔らかく落ち着いた女性的な声の印象」を明示する。
@@ -222,6 +222,8 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 - `openai.maxOutputTokens`を一時的に`60`へ下げたが、実通話では2〜3秒程度でAI音声が途切れる症状が出た。outbound queue dropはなく、生成されたframeは全量RTPへ送出されていたため、`max_output_tokens`による応答打ち切りの可能性が高い。
 - `openai.maxOutputTokens`の初期値を`200`へ戻し、短い電話応答を維持しつつ、token上限による不自然な音声途切れを避ける。
 - `response.done`の`status` / `status_details`、応答単位のOpenAI音声chunk数、RTP投入frame数、音声msをログ出力し、次回実通話で打ち切り原因を確認できるようにする。
+- 実通話ログで`status=incomplete`、`statusDetails={"type":"incomplete","reason":"max_output_tokens"}`を確認したため、`openai.maxOutputTokens`は整数または`inf`を指定できる設定に変更する。初期値は`inf`とし、OpenAI側の出力token上限による途中打ち切りを避ける。
+- `inf`指定には、応答が長くなった場合のAPI利用コスト増加、応答遅延、outbound queue増加、ユーザー割り込み時の破棄量増加というリスクがある。現時点ではbot instructionsで短い応答を強制し、`speech_started`時のresponse cancelとoutbound clearで制御する。
 - outbound queue capacityを500 frameから1000 frameへ増やし、OpenAI audio deltaが短時間にまとめて到着する場合のdropを抑制する。
 - outbound queue dropがない状態でもOpenAI audio deltaの到着間隔に揺れがあるため、RTP送出開始前に8 frame、約160 ms分の小さな再生バッファを持つ。
 - `response.output_audio.done`または`response.done`受信後は、再生開始バッファ量に満たない残りframeでもRTPへdrainする。これにより、AI音声の末尾がqueue内に残ったまま無音送出へ戻る状態を避ける。

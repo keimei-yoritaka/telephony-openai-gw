@@ -56,7 +56,7 @@ public record GatewayConfig(
             String apiKey,
             String realtimeModel,
             String voice,
-            int maxOutputTokens,
+            String maxOutputTokens,
             String turnDetectionType,
             String turnDetectionEagerness
     ) {
@@ -68,7 +68,7 @@ public record GatewayConfig(
                 throw new IllegalArgumentException(
                         "openai.voice must be one of: " + String.join(", ", SUPPORTED_REALTIME_VOICES) + ": " + voice);
             }
-            requireRange("openai.maxOutputTokens", maxOutputTokens, 1, 4096);
+            requireMaxOutputTokens(maxOutputTokens);
             require("openai.turnDetectionType", turnDetectionType);
             if (!"server_vad".equalsIgnoreCase(turnDetectionType)
                     && !"semantic_vad".equalsIgnoreCase(turnDetectionType)) {
@@ -115,6 +115,19 @@ public record GatewayConfig(
     private static void requireRange(String key, int value, int min, int max) {
         if (value < min || value > max) {
             throw new IllegalArgumentException(key + " must be between " + min + " and " + max + ": " + value);
+        }
+    }
+
+    private static void requireMaxOutputTokens(String value) {
+        require("openai.maxOutputTokens", value);
+        if ("inf".equalsIgnoreCase(value)) {
+            return;
+        }
+        try {
+            requireRange("openai.maxOutputTokens", Integer.parseInt(value), 1, 4096);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "openai.maxOutputTokens must be an integer between 1 and 4096 or inf: " + value);
         }
     }
 }

@@ -19,7 +19,7 @@ openai:
   apiKey: ${OPENAI_API_KEY}
   realtimeModel: gpt-realtime
   voice: shimmer
-  maxOutputTokens: 200
+  maxOutputTokens: inf
   turnDetectionType: semantic_vad
   turnDetectionEagerness: low
 

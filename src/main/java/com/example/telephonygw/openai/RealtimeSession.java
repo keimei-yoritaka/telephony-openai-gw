@@ -32,7 +32,7 @@ public final class RealtimeSession implements AutoCloseable {
     private final String apiKey;
     private final String model;
     private final String voice;
-    private final int maxOutputTokens;
+    private final String maxOutputTokens;
     private final String turnDetectionType;
     private final String turnDetectionEagerness;
     private final String systemInstructions;
@@ -51,7 +51,7 @@ public final class RealtimeSession implements AutoCloseable {
             String apiKey,
             String model,
             String voice,
-            int maxOutputTokens,
+            String maxOutputTokens,
             String turnDetectionType,
             String turnDetectionEagerness,
             String systemInstructions,
@@ -61,7 +61,7 @@ public final class RealtimeSession implements AutoCloseable {
         this.apiKey = Objects.requireNonNull(apiKey, "apiKey");
         this.model = Objects.requireNonNull(model, "model");
         this.voice = Objects.requireNonNull(voice, "voice");
-        this.maxOutputTokens = maxOutputTokens;
+        this.maxOutputTokens = Objects.requireNonNull(maxOutputTokens, "maxOutputTokens");
         this.turnDetectionType = Objects.requireNonNull(turnDetectionType, "turnDetectionType");
         this.turnDetectionEagerness = Objects.requireNonNull(turnDetectionEagerness, "turnDetectionEagerness");
         this.systemInstructions = Objects.requireNonNull(systemInstructions, "systemInstructions");
@@ -154,9 +154,13 @@ public final class RealtimeSession implements AutoCloseable {
 
     private String sessionUpdateEvent() {
         return """
-                {"type":"session.update","session":{"type":"realtime","model":"%s","instructions":"%s","max_output_tokens":%d,"output_modalities":["audio"],"audio":{"input":{"format":{"type":"audio/pcm","rate":%d},"turn_detection":%s},"output":{"format":{"type":"audio/pcm","rate":%d},"voice":"%s"}}}}\
-                """.formatted(json(model), json(systemInstructions), maxOutputTokens,
+                {"type":"session.update","session":{"type":"realtime","model":"%s","instructions":"%s","max_output_tokens":%s,"output_modalities":["audio"],"audio":{"input":{"format":{"type":"audio/pcm","rate":%d},"turn_detection":%s},"output":{"format":{"type":"audio/pcm","rate":%d},"voice":"%s"}}}}\
+                """.formatted(json(model), json(systemInstructions), maxOutputTokensJson(),
                 OPENAI_AUDIO_SAMPLE_RATE_HZ, turnDetectionJson(), OPENAI_AUDIO_SAMPLE_RATE_HZ, json(voice));
+    }
+
+    private String maxOutputTokensJson() {
+        return "inf".equalsIgnoreCase(maxOutputTokens) ? "\"inf\"" : maxOutputTokens;
     }
 
     private String turnDetectionJson() {
