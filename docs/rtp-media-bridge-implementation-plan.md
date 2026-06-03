@@ -241,6 +241,12 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 - STUN/ICEを使わないため、NAT/router側では少なくとも40000-50001/UDPがUASへ到達できる必要がある。
 - REGISTER callback内で`Account.modify()`を直接呼ぶとPJSIPのgroup lock所有スレッドと衝突しabortするため、callbackでは検出値の保存だけを行い、PJSUA2 event loop側で遅延反映する。
 
+通話開始時の先行挨拶:
+
+- これまでは相手の発話を受けてからOpenAI Realtime sessionを作成し、応答を返していた。
+- 通話接続直後にアプリ側から先に挨拶できるように、call session作成時にRealtime sessionを非同期で開き、`response.create`で`bot.initialGreeting`の音声出力を要求する。PJSIPのincoming call callbackをWebSocket接続待ちでブロックしない。
+- 初回挨拶中に相手が話し始めた場合は、既存の`input_audio_buffer.speech_started`処理で進行中responseをcancelし、outbound音声を破棄して相手発話を優先する。
+
 ### Step 5: PCMU最適化
 
 目的:

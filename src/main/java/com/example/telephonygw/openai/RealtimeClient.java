@@ -19,6 +19,7 @@ public final class RealtimeClient implements AutoCloseable {
 
     private final OpenAiConfig config;
     private final String systemInstructions;
+    private final String initialGreeting;
     private final AudioBridge audioBridge;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean forwarding = new AtomicBoolean(false);
@@ -29,9 +30,15 @@ public final class RealtimeClient implements AutoCloseable {
     private final AtomicLong skippedFrames = new AtomicLong();
     private Thread forwardingThread;
 
-    public RealtimeClient(OpenAiConfig config, String systemInstructions, AudioBridge audioBridge) {
+    public RealtimeClient(
+            OpenAiConfig config,
+            String systemInstructions,
+            String initialGreeting,
+            AudioBridge audioBridge
+    ) {
         this.config = config;
         this.systemInstructions = systemInstructions;
+        this.initialGreeting = initialGreeting;
         this.audioBridge = audioBridge;
     }
 
@@ -73,6 +80,30 @@ public final class RealtimeClient implements AutoCloseable {
                 audioBridge);
         session.open();
         return session;
+    }
+
+    public void startSession(String callSessionId, String reason) {
+        if (!initialized.get()) {
+            return;
+        }
+        Thread starter = new Thread(
+                () -> startSessionAsync(callSessionId, reason),
+                "openai-session-starter-" + callSessionId.substring(0, Math.min(8, callSessionId.length())));
+        starter.setDaemon(true);
+        starter.start();
+    }
+
+    private void startSessionAsync(String callSessionId, String reason) {
+        try {
+            RealtimeSession session = sessionFor(callSessionId);
+            session.startInitialGreeting(initialGreeting);
+            LOG.log(System.Logger.Level.INFO,
+                    "Started OpenAI Realtime session for call start: sessionId={0}, reason={1}",
+                    callSessionId, reason);
+        } catch (RuntimeException e) {
+            markSessionRetry(callSessionId, e);
+            failedFrames.incrementAndGet();
+        }
     }
 
     public void closeSession(String callSessionId, String reason) {
@@ -137,17 +168,13 @@ public final class RealtimeClient implements AutoCloseable {
             return;
         }
 
-        RealtimeSession session = sessions.get(frame.sessionId());
-        if (session == null) {
-            try {
-                session = openSession(frame.sessionId());
-                sessions.put(frame.sessionId(), session);
-                retryNotBeforeNanos.remove(frame.sessionId());
-            } catch (RuntimeException e) {
-                markSessionRetry(frame.sessionId(), e);
-                failedFrames.incrementAndGet();
-                return;
-            }
+        RealtimeSession session;
+        try {
+            session = sessionFor(frame.sessionId());
+        } catch (RuntimeException e) {
+            markSessionRetry(frame.sessionId(), e);
+            failedFrames.incrementAndGet();
+            return;
         }
 
         if (session.appendInputAudio(frame)) {
@@ -163,6 +190,21 @@ public final class RealtimeClient implements AutoCloseable {
             markSessionRetry(frame.sessionId(), null);
             session.close();
         }
+    }
+
+    private RealtimeSession sessionFor(String sessionId) {
+        RealtimeSession existing = sessions.get(sessionId);
+        if (existing != null) {
+            return existing;
+        }
+        RealtimeSession opened = openSession(sessionId);
+        RealtimeSession raced = sessions.putIfAbsent(sessionId, opened);
+        if (raced != null) {
+            opened.close();
+            return raced;
+        }
+        retryNotBeforeNanos.remove(sessionId);
+        return opened;
     }
 
     private boolean isRetryCoolingDown(String sessionId) {

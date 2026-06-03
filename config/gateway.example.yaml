@@ -27,6 +27,7 @@ openai:
 
 bot:
   systemInstructions: "あなたは電話応対を行うAIアシスタントです。回答は原則1文、できるだけ短く、相手が話し終わるまで待ってから返答してください。柔らかく落ち着いた女性的な声の印象で話してください。"
+  initialGreeting: "こちらはAI電話受付です。ご用件をお話しください。"
 
 logging:
   level: INFO

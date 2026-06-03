@@ -10,6 +10,7 @@ public final class CallSessionManager {
     private static final System.Logger LOG = System.getLogger(CallSessionManager.class.getName());
 
     private final Map<String, CallSession> sessions = new ConcurrentHashMap<>();
+    private final CopyOnWriteArrayList<BiConsumer<String, String>> createListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<BiConsumer<String, String>> closeListeners = new CopyOnWriteArrayList<>();
 
     public CallSession createSession() {
@@ -18,6 +19,7 @@ public final class CallSessionManager {
         session.activate();
         sessions.put(id, session);
         LOG.log(System.Logger.Level.INFO, "Created call session {0}", id);
+        notifyCreateListeners(id, "created");
         return session;
     }
 
@@ -34,6 +36,10 @@ public final class CallSessionManager {
         closeListeners.add(listener);
     }
 
+    public void addCreateListener(BiConsumer<String, String> listener) {
+        createListeners.add(listener);
+    }
+
     public void closeAll(String reason) {
         for (String sessionId : sessions.keySet()) {
             closeSession(sessionId, reason);
@@ -47,6 +53,18 @@ public final class CallSessionManager {
             } catch (RuntimeException e) {
                 LOG.log(System.Logger.Level.WARNING,
                         "Call session close listener failed: sessionId={0}, reason={1}, error={2}",
+                        sessionId, reason, e.getMessage());
+            }
+        }
+    }
+
+    private void notifyCreateListeners(String sessionId, String reason) {
+        for (BiConsumer<String, String> listener : createListeners) {
+            try {
+                listener.accept(sessionId, reason);
+            } catch (RuntimeException e) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "Call session create listener failed: sessionId={0}, reason={1}, error={2}",
                         sessionId, reason, e.getMessage());
             }
         }

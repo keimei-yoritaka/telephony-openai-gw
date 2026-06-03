@@ -79,9 +79,10 @@ public record GatewayConfig(
         }
     }
 
-    public record BotConfig(String systemInstructions) {
+    public record BotConfig(String systemInstructions, String initialGreeting) {
         public void validate() {
             require("bot.systemInstructions", systemInstructions);
+            require("bot.initialGreeting", initialGreeting);
         }
     }
 

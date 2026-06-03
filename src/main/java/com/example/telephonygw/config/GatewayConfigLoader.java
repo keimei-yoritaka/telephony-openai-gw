@@ -38,7 +38,10 @@ public final class GatewayConfigLoader {
                         optionalValue(values, "openai.turnDetectionType", "semantic_vad"),
                         optionalValue(values, "openai.turnDetectionEagerness", "low")
                 ),
-                new GatewayConfig.BotConfig(value(values, "bot.systemInstructions")),
+                new GatewayConfig.BotConfig(
+                        value(values, "bot.systemInstructions"),
+                        optionalValue(values, "bot.initialGreeting", "こちらはAI電話受付です。ご用件をお話しください。")
+                ),
                 new GatewayConfig.LoggingConfig(value(values, "logging.level"))
         );
         config.validate();

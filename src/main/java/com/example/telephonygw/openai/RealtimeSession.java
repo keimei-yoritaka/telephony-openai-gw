@@ -42,6 +42,7 @@ public final class RealtimeSession implements AutoCloseable {
     private final AtomicLong sentBytes = new AtomicLong();
     private final AtomicLong receivedOutputChunks = new AtomicLong();
     private final AtomicLong queuedOutputFrames = new AtomicLong();
+    private final AtomicBoolean initialGreetingStarted = new AtomicBoolean(false);
     private final ByteArrayOutputStream pendingOutputPcm8 = new ByteArrayOutputStream();
     private volatile long lastFrameNanos;
     private volatile WebSocket webSocket;
@@ -121,6 +122,19 @@ public final class RealtimeSession implements AutoCloseable {
                     callSessionId, e.getMessage());
             return false;
         }
+    }
+
+    public void startInitialGreeting(String greeting) {
+        if (!open.get() || webSocket == null || !initialGreetingStarted.compareAndSet(false, true)) {
+            return;
+        }
+        String instructions = "通話が接続された直後の最初の発話として、次の文だけを自然に話してください: " + greeting;
+        sendText("""
+                {"type":"response.create","response":{"instructions":"%s","output_modalities":["audio"]}}\
+                """.formatted(json(instructions)));
+        LOG.log(System.Logger.Level.INFO,
+                "Requested OpenAI initial greeting: sessionId={0}",
+                callSessionId);
     }
 
     public boolean isIdle(long nowNanos, Duration idleTimeout) {

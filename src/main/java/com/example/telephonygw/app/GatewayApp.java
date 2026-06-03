@@ -24,7 +24,12 @@ public final class GatewayApp {
         this.config = config;
         this.sessionManager = new CallSessionManager();
         this.audioBridge = new AudioBridge();
-        this.realtimeClient = new RealtimeClient(config.openAi(), config.bot().systemInstructions(), audioBridge);
+        this.realtimeClient = new RealtimeClient(
+                config.openAi(),
+                config.bot().systemInstructions(),
+                config.bot().initialGreeting(),
+                audioBridge);
+        this.sessionManager.addCreateListener(realtimeClient::startSession);
         this.sessionManager.addCloseListener(realtimeClient::closeSession);
         this.sipEndpoint = new PjsipEndpoint(config.sip(), config.registration(), sessionManager, audioBridge);
     }
