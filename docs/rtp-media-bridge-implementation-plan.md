@@ -237,7 +237,9 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 - `publicContactAddress`が指定された場合は、手動設定を優先し、SIP transportおよびAccount media transportの`publicAddress`へ同じ値を設定する。
 - Via `rport`で検出できるportはSIP signaling用portであり、RTP media portではない。そのため、SDPの`c=`用IPの自動検出には使うが、SDPの`m=` portの外側port検出には使わない。
 - `streamKaEnabled`を有効化し、RTP/RTCP media transportのNAT binding維持を補助する。
-- STUN/ICEを使わないため、NAT/router側では少なくともPJSIPが利用するRTP/RTCPポート範囲がUASへ到達できる必要がある。必要に応じてRTP port rangeを固定化する設定を追加する。
+- RTP portは40000以上50000以下の偶数値をランダムに使う。PJSUA2 media transport configでは`port=40000`、`portRange=10000`、`randomizePort=true`を指定する。RTCPはRTP port+1を使う。
+- STUN/ICEを使わないため、NAT/router側では少なくとも40000-50001/UDPがUASへ到達できる必要がある。
+- REGISTER callback内で`Account.modify()`を直接呼ぶとPJSIPのgroup lock所有スレッドと衝突しabortするため、callbackでは検出値の保存だけを行い、PJSUA2 event loop側で遅延反映する。
 
 ### Step 5: PCMU最適化
 

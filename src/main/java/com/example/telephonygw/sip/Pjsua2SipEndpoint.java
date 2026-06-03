@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddressObserver {
     private static final System.Logger LOG = System.getLogger(Pjsua2SipEndpoint.class.getName());
+    private static final long RTP_PORT_START = 40000L;
+    private static final long RTP_PORT_RANGE = 10000L;
 
     private final SipConfig sipConfig;
     private final RegistrationConfig registrationConfig;
@@ -22,6 +24,7 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean eventsRunning = new AtomicBoolean(false);
     private final AtomicReference<String> detectedPublicAddress = new AtomicReference<>();
+    private final AtomicReference<String> pendingPublicAddressUpdate = new AtomicReference<>();
 
     private Object endpoint;
     private Object account;
@@ -109,7 +112,7 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         LOG.log(System.Logger.Level.INFO,
                 "Detected SIP Registration reflexive address from Via rport/received: publicAddress={0}, publicPort={1}",
                 publicAddress, publicPort);
-        applyDetectedPublicAddress(publicAddress);
+        pendingPublicAddressUpdate.set(publicAddress);
     }
 
     @Override
@@ -158,6 +161,9 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         Object mediaConfig = invoke(accountConfig, "getMediaConfig");
         Object mediaTransportConfig = invoke(mediaConfig, "getTransportConfig");
         invoke(mediaTransportConfig, "setBoundAddress", sipConfig.bindAddress());
+        invoke(mediaTransportConfig, "setPort", RTP_PORT_START);
+        invoke(mediaTransportConfig, "setPortRange", RTP_PORT_RANGE);
+        invoke(mediaTransportConfig, "setRandomizePort", true);
         String publicAddress = effectivePublicAddress();
         if (!publicAddress.isBlank()) {
             invoke(mediaTransportConfig, "setPublicAddress", publicAddress);
@@ -166,9 +172,11 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         invoke(mediaConfig, "setStreamKaEnabled", true);
 
         LOG.log(System.Logger.Level.INFO,
-                "Configured PJSUA2 media transport NAT advertisement: publicAddress={0}, bindAddress={1}, streamKeepAlive=true",
+                "Configured PJSUA2 media transport NAT advertisement: publicAddress={0}, bindAddress={1}, rtpPortRange={2}-{3}, randomizePort=true, streamKeepAlive=true",
                 publicAddress.isBlank() ? "(auto)" : publicAddress,
-                sipConfig.bindAddress());
+                sipConfig.bindAddress(),
+                RTP_PORT_START,
+                RTP_PORT_START + RTP_PORT_RANGE);
     }
 
     private void applyDetectedPublicAddress(String publicAddress) {
@@ -276,6 +284,7 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
             while (eventsRunning.get()) {
                 try {
                     invoke(endpoint, "libHandleEvents", 50L);
+                    applyPendingPublicAddressUpdate();
                 } catch (ReflectiveOperationException | RuntimeException e) {
                     if (eventsRunning.get()) {
                         LOG.log(System.Logger.Level.WARNING, "PJSUA2 event loop error: {0}", e.getMessage());
@@ -285,6 +294,13 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         }, "pjsua2-events");
         eventThread.setDaemon(true);
         eventThread.start();
+    }
+
+    private void applyPendingPublicAddressUpdate() {
+        String publicAddress = pendingPublicAddressUpdate.getAndSet(null);
+        if (publicAddress != null) {
+            applyDetectedPublicAddress(publicAddress);
+        }
     }
 
     private void registerCurrentThread(String name) {

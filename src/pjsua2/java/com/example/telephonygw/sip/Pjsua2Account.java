@@ -96,6 +96,9 @@ public final class Pjsua2Account extends Account {
             if (message == null || message.isBlank()) {
                 return Optional.empty();
             }
+            if (!isSuccessfulSipResponse(message)) {
+                return Optional.empty();
+            }
             String via = firstHeaderValue(message, "Via")
                     .or(() -> firstHeaderValue(message, "V"))
                     .orElse("");
@@ -123,6 +126,23 @@ public final class Pjsua2Account extends Account {
             }
         }
         return Optional.empty();
+    }
+
+    private static boolean isSuccessfulSipResponse(String message) {
+        String firstLine = message.lines().findFirst().orElse("").trim();
+        if (!firstLine.startsWith("SIP/2.0 ")) {
+            return false;
+        }
+        String[] parts = firstLine.split("\\s+", 3);
+        if (parts.length < 2) {
+            return false;
+        }
+        try {
+            int statusCode = Integer.parseInt(parts[1]);
+            return statusCode >= 200 && statusCode < 300;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     private record ReflexiveAddress(String publicAddress, int publicPort) {
