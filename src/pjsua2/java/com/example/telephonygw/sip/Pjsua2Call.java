@@ -1,6 +1,7 @@
 package com.example.telephonygw.sip;
 
 import com.example.telephonygw.media.AudioBridge;
+import com.example.telephonygw.logging.GatewayEventLogger;
 import com.example.telephonygw.session.CallSessionManager;
 import org.pjsip.pjsua2.Account;
 import org.pjsip.pjsua2.AudioMedia;
@@ -47,6 +48,12 @@ final class Pjsua2Call extends Call {
             LOG.log(System.Logger.Level.INFO,
                     "SIP call state changed: callId={0}, state={1}, status={2}, reason={3}",
                     info.getId(), info.getStateText(), info.getLastStatusCode(), info.getLastReason());
+            GatewayEventLogger.info(LOG, "sip_call_state",
+                    "sessionId", sessionId,
+                    "callId", info.getId(),
+                    "state", info.getStateText(),
+                    "status", info.getLastStatusCode(),
+                    "reason", info.getLastReason());
 
             if (info.getState() == pjsip_inv_state.PJSIP_INV_STATE_DISCONNECTED) {
                 closeAudioBridge();
@@ -68,6 +75,10 @@ final class Pjsua2Call extends Call {
             LOG.log(System.Logger.Level.INFO,
                     "SIP call media state changed: callId={0}, mediaCount={1}",
                     info.getId(), info.getMedia().size());
+            GatewayEventLogger.info(LOG, "sip_call_media_state",
+                    "sessionId", sessionId,
+                    "callId", info.getId(),
+                    "mediaCount", info.getMedia().size());
 
             for (int i = 0; i < info.getMedia().size(); i++) {
                 CallMediaInfo mediaInfo = info.getMedia().get(i);
@@ -98,6 +109,10 @@ final class Pjsua2Call extends Call {
         LOG.log(System.Logger.Level.INFO,
                 "Attached PJSUA2 audio bridge: callId={0}, sessionId={1}, mediaIndex={2}",
                 getId(), sessionId, mediaIndex);
+        GatewayEventLogger.info(LOG, "rtp_audio_bridge_attached",
+                "sessionId", sessionId,
+                "callId", getId(),
+                "mediaIndex", mediaIndex);
     }
 
     private void closeAudioBridge() {
@@ -134,6 +149,13 @@ final class Pjsua2Call extends Call {
         LOG.log(System.Logger.Level.INFO,
                 "Closed PJSUA2 audio bridge: callId={0}, sessionId={1}, inboundFrames={2}, outboundFrames={3}, outboundSilenceFrames={4}, elapsedMs={5}",
                 getId(), sessionId, inboundFrameCount, outboundFrameCount, outboundSilenceFrameCount, elapsedMillis);
+        GatewayEventLogger.info(LOG, "rtp_audio_bridge_closed",
+                "sessionId", sessionId,
+                "callId", getId(),
+                "inboundFrames", inboundFrameCount,
+                "outboundFrames", outboundFrameCount,
+                "outboundSilenceFrames", outboundSilenceFrameCount,
+                "elapsedMs", elapsedMillis);
     }
 
     private static boolean isAlreadyDisconnected(Exception e) {

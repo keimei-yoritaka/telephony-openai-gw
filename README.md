@@ -59,6 +59,34 @@ scripts/run-pjsua2-local.sh config/gateway.local.yaml
 
 確認時にOpenH264 native libraryが見つからない警告が出る場合があります。PJSUA2 Java bindingの生成コードがvideo codec用libraryの読み込みを試行するためで、本プロジェクトのMVPではvideoを使わないため現時点では無害です。
 
+## ログ確認
+
+ローカル検証では、PJSIP nativeの詳細ログとアプリケーションログが同じstdout/stderrへ出力されます。全量ログは調査用として残しつつ、通話フローだけを追う場合は`GW_EVENT`を抽出します。
+
+```sh
+scripts/run-pjsua2-local.sh config/gateway.local.yaml > apl.log 2>&1
+grep 'GW_EVENT' apl.log
+```
+
+`GW_EVENT`は`event=... sessionId=...`形式の要約ログです。代表的なイベントは以下です。
+
+- `call_session_created`: 通話セッション作成。
+- `sip_call_answered`: INVITEへ200 OK応答。
+- `rtp_audio_bridge_attached`: RTP音声ブリッジ接続。
+- `openai_initial_greeting_requested`: 初回挨拶をOpenAIへ要求。
+- `openai_user_speech_started`: ユーザー発話検出。AI応答を割り込んだ場合は`interruptedResponse=true`。
+- `openai_response_done`: AI応答生成完了。
+- `rtp_audio_bridge_closed`: RTP音声ブリッジ終了サマリー。
+- `call_session_closed`: 通話セッション終了。
+
+アプリケーション側のログレベルは`config/*.yaml`の`logging.level`で指定します。対応値は`TRACE`、`DEBUG`、`INFO`、`WARN`、`WARNING`、`ERROR`です。
+
+### stdout/stderr運用について
+
+現時点ではstdout/stderrへ出す構成を維持します。systemd、container、CIでは標準出力集約が扱いやすく、PJSIP nativeログも同じプロセスから出るため、まずは起動元でファイル化またはjournaldへ集約する方針が単純です。
+
+本番運用で長期間ログを保持する段階では、JavaアプリログをJSON Linesまたは専用file appenderへ分離し、PJSIP nativeログとは別ファイルに分ける構成を検討します。その場合も、SIP/RTP障害調査ではPJSIP詳細ログが必要になるため、完全に捨てずにrotation対象として保持します。
+
 ## 主要ドキュメント
 
 - [要件・実装計画](docs/requirements-and-implementation-plan.md)

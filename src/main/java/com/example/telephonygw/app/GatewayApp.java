@@ -1,6 +1,7 @@
 package com.example.telephonygw.app;
 
 import com.example.telephonygw.config.GatewayConfig;
+import com.example.telephonygw.logging.GatewayEventLogger;
 import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.openai.RealtimeClient;
 import com.example.telephonygw.session.CallSessionManager;
@@ -40,6 +41,13 @@ public final class GatewayApp {
         }
 
         LOG.log(System.Logger.Level.INFO, "Starting Telephony OpenAI Gateway");
+        GatewayEventLogger.info(LOG, "gateway_starting",
+                "sipBackend", config.sip().backend(),
+                "sipBind", config.sip().bindAddress(),
+                "sipPort", config.sip().port(),
+                "sipTransport", config.sip().transport(),
+                "openaiModel", config.openAi().realtimeModel(),
+                "voice", config.openAi().voice());
         LOG.log(System.Logger.Level.INFO, "Configured SIP endpoint {0}:{1}/{2}",
                 config.sip().bindAddress(), config.sip().port(), config.sip().transport());
 
@@ -50,6 +58,7 @@ public final class GatewayApp {
         sipEndpoint.register();
 
         LOG.log(System.Logger.Level.INFO, "Gateway started");
+        GatewayEventLogger.info(LOG, "gateway_started");
     }
 
     public void stop() {
@@ -58,12 +67,14 @@ public final class GatewayApp {
         }
 
         LOG.log(System.Logger.Level.INFO, "Stopping Telephony OpenAI Gateway");
+        GatewayEventLogger.info(LOG, "gateway_stopping");
         sipEndpoint.stop();
         realtimeClient.close();
         audioBridge.stop();
         sessionManager.closeAll("gateway_shutdown");
         shutdownLatch.countDown();
         LOG.log(System.Logger.Level.INFO, "Gateway stopped");
+        GatewayEventLogger.info(LOG, "gateway_stopped");
     }
 
     public void awaitShutdown() throws InterruptedException {

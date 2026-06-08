@@ -3,6 +3,7 @@ package com.example.telephonygw;
 import com.example.telephonygw.app.GatewayApp;
 import com.example.telephonygw.config.GatewayConfig;
 import com.example.telephonygw.config.GatewayConfigLoader;
+import com.example.telephonygw.logging.LoggingConfigurator;
 
 import java.nio.file.Path;
 
@@ -13,6 +14,7 @@ public final class Main {
     public static void main(String[] args) throws Exception {
         Path configPath = resolveConfigPath(args);
         GatewayConfig config = GatewayConfigLoader.load(configPath);
+        LoggingConfigurator.configure(config.logging().level());
 
         if (containsArg(args, "--check-config")) {
             System.getLogger(Main.class.getName()).log(System.Logger.Level.INFO,

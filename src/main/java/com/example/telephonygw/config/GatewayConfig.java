@@ -89,6 +89,10 @@ public record GatewayConfig(
     public record LoggingConfig(String level) {
         public void validate() {
             require("logging.level", level);
+            if (!Set.of("TRACE", "DEBUG", "INFO", "WARN", "WARNING", "ERROR").contains(level.toUpperCase())) {
+                throw new IllegalArgumentException(
+                        "logging.level must be TRACE, DEBUG, INFO, WARN, WARNING, or ERROR: " + level);
+            }
         }
     }
 

@@ -1,5 +1,7 @@
 package com.example.telephonygw.media;
 
+import com.example.telephonygw.logging.GatewayEventLogger;
+
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
@@ -24,6 +26,9 @@ public final class AudioBridge {
             LOG.log(System.Logger.Level.INFO,
                     "Initialized audio bridge with inbound queue capacity={0}",
                     DEFAULT_QUEUE_CAPACITY);
+            GatewayEventLogger.info(LOG, "audio_bridge_initialized",
+                    "inboundQueueCapacity", DEFAULT_QUEUE_CAPACITY,
+                    "outboundQueueCapacity", DEFAULT_OUTBOUND_QUEUE_CAPACITY);
         }
     }
 
@@ -109,6 +114,13 @@ public final class AudioBridge {
                     "Stopped audio bridge: inboundOffered={0}, inboundDropped={1}, inboundDepth={2}, outboundOffered={3}, outboundDropped={4}, outboundDepth={5}",
                     inboundQueue.offeredFrames(), inboundQueue.droppedFrames(), inboundQueue.depth(),
                     outboundOffered, outboundDropped, outboundDepth);
+            GatewayEventLogger.info(LOG, "audio_bridge_stopped",
+                    "inboundOffered", inboundQueue.offeredFrames(),
+                    "inboundDropped", inboundQueue.droppedFrames(),
+                    "inboundDepth", inboundQueue.depth(),
+                    "outboundOffered", outboundOffered,
+                    "outboundDropped", outboundDropped,
+                    "outboundDepth", outboundDepth);
             inboundQueue.clear();
             outboundQueues.clear();
             outboundCompleteSessions.clear();

@@ -1,5 +1,7 @@
 package com.example.telephonygw.session;
 
+import com.example.telephonygw.logging.GatewayEventLogger;
+
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -19,6 +21,8 @@ public final class CallSessionManager {
         session.activate();
         sessions.put(id, session);
         LOG.log(System.Logger.Level.INFO, "Created call session {0}", id);
+        GatewayEventLogger.info(LOG, "call_session_created",
+                "sessionId", id);
         notifyCreateListeners(id, "created");
         return session;
     }
@@ -28,6 +32,9 @@ public final class CallSessionManager {
         if (session != null) {
             session.close(reason);
             LOG.log(System.Logger.Level.INFO, "Closed call session {0}: {1}", sessionId, reason);
+            GatewayEventLogger.info(LOG, "call_session_closed",
+                    "sessionId", sessionId,
+                    "reason", reason);
             notifyCloseListeners(sessionId, reason);
         }
     }

@@ -2,6 +2,7 @@ package com.example.telephonygw.openai;
 
 import com.example.telephonygw.media.AudioFrame;
 import com.example.telephonygw.media.AudioBridge;
+import com.example.telephonygw.logging.GatewayEventLogger;
 
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
@@ -86,6 +87,13 @@ public final class RealtimeSession implements AutoCloseable {
             LOG.log(System.Logger.Level.INFO,
                     "Opened OpenAI Realtime session: sessionId={0}, model={1}, voice={2}, inputRateHz={3}, maxOutputTokens={4}, turnDetection={5}",
                     callSessionId, model, voice, OPENAI_AUDIO_SAMPLE_RATE_HZ, maxOutputTokens, turnDetectionType);
+            GatewayEventLogger.info(LOG, "openai_realtime_session_opened",
+                    "sessionId", callSessionId,
+                    "model", model,
+                    "voice", voice,
+                    "inputRateHz", OPENAI_AUDIO_SAMPLE_RATE_HZ,
+                    "maxOutputTokens", maxOutputTokens,
+                    "turnDetection", turnDetectionType);
         } catch (Exception e) {
             open.set(false);
             throw new IllegalStateException("Failed to open OpenAI Realtime WebSocket session", e);
@@ -135,6 +143,8 @@ public final class RealtimeSession implements AutoCloseable {
         LOG.log(System.Logger.Level.INFO,
                 "Requested OpenAI initial greeting: sessionId={0}",
                 callSessionId);
+        GatewayEventLogger.info(LOG, "openai_initial_greeting_requested",
+                "sessionId", callSessionId);
     }
 
     public boolean isIdle(long nowNanos, Duration idleTimeout) {
@@ -153,6 +163,12 @@ public final class RealtimeSession implements AutoCloseable {
                     "Closed OpenAI Realtime session: sessionId={0}, sentFrames={1}, sentBytes={2}, receivedOutputChunks={3}, queuedOutputFrames={4}",
                     callSessionId, sentFrames.get(), sentBytes.get(),
                     receivedOutputChunks.get(), queuedOutputFrames.get());
+            GatewayEventLogger.info(LOG, "openai_realtime_session_closed",
+                    "sessionId", callSessionId,
+                    "sentFrames", sentFrames.get(),
+                    "sentBytes", sentBytes.get(),
+                    "receivedOutputChunks", receivedOutputChunks.get(),
+                    "queuedOutputFrames", queuedOutputFrames.get());
         }
     }
 
@@ -244,6 +260,8 @@ public final class RealtimeSession implements AutoCloseable {
             LOG.log(System.Logger.Level.INFO,
                     "OpenAI Realtime WebSocket connected: sessionId={0}",
                     callSessionId);
+            GatewayEventLogger.info(LOG, "openai_websocket_connected",
+                    "sessionId", callSessionId);
         }
 
         @Override
@@ -268,6 +286,10 @@ public final class RealtimeSession implements AutoCloseable {
                             extractStringField(payload, "type", payload.indexOf("\"error\"")),
                             code,
                             extractStringField(payload, "message", 0));
+                    GatewayEventLogger.warning(LOG, "openai_error_event",
+                            "sessionId", callSessionId,
+                            "code", code,
+                            "message", extractStringField(payload, "message", 0));
                     return WebSocket.Listener.super.onText(webSocket, data, last);
                 }
                 if (eventType.equals("response.output_audio.delta") && responseActive.get()) {
@@ -278,6 +300,8 @@ public final class RealtimeSession implements AutoCloseable {
                     responseActive.set(true);
                     audioBridge.markOutboundActive(callSessionId);
                     resetCurrentResponseStats();
+                    GatewayEventLogger.info(LOG, "openai_response_created",
+                            "sessionId", callSessionId);
                 } else if (eventType.equals("response.output_audio.done")) {
                     audioBridge.markOutboundComplete(callSessionId);
                     LOG.log(System.Logger.Level.INFO,
@@ -286,6 +310,12 @@ public final class RealtimeSession implements AutoCloseable {
                             currentResponseQueuedFrames,
                             currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
                             pendingOutputPcm8.size(), audioBridge.outboundDepth(callSessionId));
+                    GatewayEventLogger.info(LOG, "openai_output_audio_done",
+                            "sessionId", callSessionId,
+                            "responseChunks", currentResponseChunks,
+                            "responseQueuedFrames", currentResponseQueuedFrames,
+                            "responseAudioMs", currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
+                            "outboundDepth", audioBridge.outboundDepth(callSessionId));
                 } else if (eventType.equals("response.done")) {
                     responseActive.set(false);
                     audioBridge.markOutboundComplete(callSessionId);
@@ -297,6 +327,12 @@ public final class RealtimeSession implements AutoCloseable {
                             currentResponseQueuedFrames,
                             currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
                             audioBridge.outboundDepth(callSessionId));
+                    GatewayEventLogger.info(LOG, "openai_response_done",
+                            "sessionId", callSessionId,
+                            "status", extractStringField(payload, "status", 0),
+                            "responseQueuedFrames", currentResponseQueuedFrames,
+                            "responseAudioMs", currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
+                            "outboundDepth", audioBridge.outboundDepth(callSessionId));
                 }
                 if (shouldLog(eventType)) {
                     LOG.log(System.Logger.Level.INFO,
@@ -312,6 +348,10 @@ public final class RealtimeSession implements AutoCloseable {
             LOG.log(System.Logger.Level.INFO,
                     "OpenAI Realtime WebSocket closed: sessionId={0}, status={1}, reason={2}",
                     callSessionId, statusCode, reason);
+            GatewayEventLogger.info(LOG, "openai_websocket_closed",
+                    "sessionId", callSessionId,
+                    "status", statusCode,
+                    "reason", reason);
             return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
         }
 
@@ -320,6 +360,9 @@ public final class RealtimeSession implements AutoCloseable {
             LOG.log(System.Logger.Level.WARNING,
                     "OpenAI Realtime WebSocket error: sessionId={0}, error={1}",
                     callSessionId, error.getMessage());
+            GatewayEventLogger.warning(LOG, "openai_websocket_error",
+                    "sessionId", callSessionId,
+                    "error", error.getMessage());
         }
 
         private static boolean shouldLog(String eventType) {
@@ -375,6 +418,10 @@ public final class RealtimeSession implements AutoCloseable {
                             LOG.log(System.Logger.Level.INFO,
                                     "Queued OpenAI output audio frame for RTP: sessionId={0}, frames={1}, outboundDepth={2}",
                                     callSessionId, count, audioBridge.outboundDepth(callSessionId));
+                            GatewayEventLogger.info(LOG, "rtp_outbound_audio_queued",
+                                    "sessionId", callSessionId,
+                                    "frames", count,
+                                    "outboundDepth", audioBridge.outboundDepth(callSessionId));
                         }
                     }
                 }
@@ -416,6 +463,10 @@ public final class RealtimeSession implements AutoCloseable {
                         "Cleared outbound audio because user speech started: sessionId={0}, clearedFrames={1}",
                         callSessionId, clearedFrames);
             }
+            GatewayEventLogger.info(LOG, "openai_user_speech_started",
+                    "sessionId", callSessionId,
+                    "interruptedResponse", wasResponseActive,
+                    "clearedFrames", clearedFrames);
         }
 
         private static String extractStringField(String payload, String fieldName, int fromIndex) {

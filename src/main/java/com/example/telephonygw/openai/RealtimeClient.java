@@ -1,6 +1,7 @@
 package com.example.telephonygw.openai;
 
 import com.example.telephonygw.config.GatewayConfig.OpenAiConfig;
+import com.example.telephonygw.logging.GatewayEventLogger;
 import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.media.AudioFrame;
 import com.example.telephonygw.media.AudioQueue;
@@ -91,6 +92,9 @@ public final class RealtimeClient implements AutoCloseable {
                 "openai-session-starter-" + callSessionId.substring(0, Math.min(8, callSessionId.length())));
         starter.setDaemon(true);
         starter.start();
+        GatewayEventLogger.info(LOG, "openai_session_start_scheduled",
+                "sessionId", callSessionId,
+                "reason", reason);
     }
 
     private void startSessionAsync(String callSessionId, String reason) {
@@ -100,6 +104,9 @@ public final class RealtimeClient implements AutoCloseable {
             LOG.log(System.Logger.Level.INFO,
                     "Started OpenAI Realtime session for call start: sessionId={0}, reason={1}",
                     callSessionId, reason);
+            GatewayEventLogger.info(LOG, "openai_session_started",
+                    "sessionId", callSessionId,
+                    "reason", reason);
         } catch (RuntimeException e) {
             markSessionRetry(callSessionId, e);
             failedFrames.incrementAndGet();
@@ -115,10 +122,18 @@ public final class RealtimeClient implements AutoCloseable {
             LOG.log(System.Logger.Level.INFO,
                     "Closed OpenAI Realtime session for call close: sessionId={0}, reason={1}, clearedOutboundFrames={2}",
                     callSessionId, reason, clearedFrames);
+            GatewayEventLogger.info(LOG, "openai_session_closed_for_call",
+                    "sessionId", callSessionId,
+                    "reason", reason,
+                    "clearedOutboundFrames", clearedFrames);
         } else if (clearedFrames > 0) {
             LOG.log(System.Logger.Level.INFO,
                     "Cleared outbound audio for closed call without active OpenAI session: sessionId={0}, reason={1}, clearedOutboundFrames={2}",
                     callSessionId, reason, clearedFrames);
+            GatewayEventLogger.info(LOG, "openai_outbound_cleared_without_session",
+                    "sessionId", callSessionId,
+                    "reason", reason,
+                    "clearedOutboundFrames", clearedFrames);
         }
     }
 
@@ -183,6 +198,9 @@ public final class RealtimeClient implements AutoCloseable {
                 LOG.log(System.Logger.Level.INFO,
                         "Forwarded inbound audio frame to OpenAI Realtime: sessionId={0}, frames={1}",
                         frame.sessionId(), count);
+                GatewayEventLogger.info(LOG, "openai_inbound_audio_forwarded",
+                        "sessionId", frame.sessionId(),
+                        "frames", count);
             }
         } else {
             failedFrames.incrementAndGet();
@@ -226,10 +244,19 @@ public final class RealtimeClient implements AutoCloseable {
             LOG.log(System.Logger.Level.WARNING,
                     "OpenAI Realtime audio append failed. Delaying reconnect: sessionId={0}, retryDelaySeconds={1}",
                     sessionId, SESSION_RETRY_DELAY.toSeconds());
+            GatewayEventLogger.warning(LOG, "openai_session_retry_scheduled",
+                    "sessionId", sessionId,
+                    "retryDelaySeconds", SESSION_RETRY_DELAY.toSeconds(),
+                    "reason", "append_failed");
         } else {
             LOG.log(System.Logger.Level.WARNING,
                     "OpenAI Realtime session open failed. Delaying reconnect: sessionId={0}, retryDelaySeconds={1}, error={2}",
                     sessionId, SESSION_RETRY_DELAY.toSeconds(), error.getMessage());
+            GatewayEventLogger.warning(LOG, "openai_session_retry_scheduled",
+                    "sessionId", sessionId,
+                    "retryDelaySeconds", SESSION_RETRY_DELAY.toSeconds(),
+                    "reason", "open_failed",
+                    "error", error.getMessage());
         }
     }
 

@@ -3,6 +3,7 @@ package com.example.telephonygw.sip;
 import com.example.telephonygw.session.CallSession;
 import com.example.telephonygw.session.CallSessionManager;
 import com.example.telephonygw.media.AudioBridge;
+import com.example.telephonygw.logging.GatewayEventLogger;
 import org.pjsip.pjsua2.Account;
 import org.pjsip.pjsua2.CallOpParam;
 import org.pjsip.pjsua2.OnIncomingCallParam;
@@ -41,6 +42,10 @@ public final class Pjsua2Account extends Account {
         LOG.log(System.Logger.Level.INFO,
                 "SIP Registration state changed: code={0}, reason={1}, expiration={2}",
                 prm.getCode(), prm.getReason(), prm.getExpiration());
+        GatewayEventLogger.info(LOG, "sip_registration_state",
+                "code", prm.getCode(),
+                "reason", prm.getReason(),
+                "expiration", prm.getExpiration());
         if (prm.getCode() >= 200 && prm.getCode() < 300) {
             extractReflexiveAddress(prm).ifPresent(address ->
                     registrationAddressObserver.onRegistrationReflexiveAddressDetected(
@@ -52,6 +57,9 @@ public final class Pjsua2Account extends Account {
     public void onIncomingCall(OnIncomingCallParam prm) {
         int callId = prm.getCallId();
         LOG.log(System.Logger.Level.INFO, "Incoming SIP INVITE received: callId={0}", callId);
+        GatewayEventLogger.info(LOG, "sip_invite_received",
+                "callId", callId,
+                "activeCalls", activeCalls.size());
 
         if (!activeCalls.isEmpty()) {
             answerBusy(callId);
@@ -69,10 +77,18 @@ public final class Pjsua2Account extends Account {
             LOG.log(System.Logger.Level.INFO,
                     "Answered incoming SIP call: callId={0}, sessionId={1}",
                     callId, session.sessionId());
+            GatewayEventLogger.info(LOG, "sip_call_answered",
+                    "sessionId", session.sessionId(),
+                    "callId", callId,
+                    "status", 200);
         } catch (Exception e) {
             activeCalls.remove(callId);
             sessionManager.closeSession(session.sessionId(), "answer_failed");
             LOG.log(System.Logger.Level.ERROR, "Failed to answer incoming SIP call: " + e.getMessage(), e);
+            GatewayEventLogger.warning(LOG, "sip_call_answer_failed",
+                    "sessionId", session.sessionId(),
+                    "callId", callId,
+                    "error", e.getMessage());
         }
     }
 
@@ -83,8 +99,14 @@ public final class Pjsua2Account extends Account {
             answer.setStatusCode(pjsip_status_code.PJSIP_SC_BUSY_HERE);
             call.answer(answer);
             LOG.log(System.Logger.Level.INFO, "Rejected incoming SIP call as busy: callId={0}", callId);
+            GatewayEventLogger.info(LOG, "sip_call_rejected_busy",
+                    "callId", callId,
+                    "activeCalls", activeCalls.size());
         } catch (Exception e) {
             LOG.log(System.Logger.Level.ERROR, "Failed to reject incoming SIP call: " + e.getMessage(), e);
+            GatewayEventLogger.warning(LOG, "sip_call_reject_failed",
+                    "callId", callId,
+                    "error", e.getMessage());
         } finally {
             call.delete();
         }

@@ -1,5 +1,7 @@
 package com.example.telephonygw.media;
 
+import com.example.telephonygw.logging.GatewayEventLogger;
+
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -27,6 +29,11 @@ public final class AudioQueue {
                 LOG.log(System.Logger.Level.WARNING,
                         "Audio queue dropped frame: queue={0}, offered={1}, dropped={2}, depth={3}",
                         name, offered, dropped, frames.size());
+                GatewayEventLogger.warning(LOG, "audio_queue_frame_dropped",
+                        "queue", name,
+                        "offered", offered,
+                        "dropped", dropped,
+                        "depth", frames.size());
             }
             return false;
         }
