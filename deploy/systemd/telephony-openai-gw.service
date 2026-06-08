@@ -1,0 +1,22 @@
+[Unit]
+Description=Telephony OpenAI Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=telephonygw
+Group=telephonygw
+WorkingDirectory=/opt/telephony-openai-gw
+EnvironmentFile=/etc/sysconfig/telephony-openai-gw
+Environment=GATEWAY_CONFIG=/etc/telephony-openai-gw/gateway.yaml
+ExecStart=/opt/telephony-openai-gw/scripts/run-pjsua2-local.sh /etc/telephony-openai-gw/gateway.yaml
+Restart=on-failure
+RestartSec=5
+
+# SIP/RTPはUDP socketを利用する。root権限は不要なため、専用userで起動する。
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

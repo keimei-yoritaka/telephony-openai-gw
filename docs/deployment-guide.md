@@ -1,0 +1,259 @@
+# デプロイメントガイド
+
+## 目的
+
+本ドキュメントは、Telephony OpenAI Gatewayを以下の2環境で並行して扱うためのモジュール構成とデプロイメント手順を整理する。
+
+- 開発・検証環境: macOS
+- 顧客向けデモ環境: RHEL 8.10
+
+SIP/RTP、PJSUA2 Java binding、OpenAI Realtime APIの基本構成は両環境で同一とし、OS差分はnative library build、service管理、firewall設定に閉じ込める。
+
+## 共通モジュール構成
+
+Repositoryに含めるモジュール:
+
+- Java source: `src/main/java/`
+- PJSUA2連携source: `src/pjsua2/java/`
+- 設定例: `config/*.example.yaml`
+- 起動・確認script: `scripts/`
+- systemd unit例: `deploy/systemd/`
+- 設計・運用文書: `docs/`
+
+Repositoryに含めないモジュール:
+
+- PJSIP/PJSUA2 native build成果物: `.deps/`
+- 実環境設定: `config/gateway.local.yaml`、`/etc/telephony-openai-gw/gateway.yaml`
+- secret: `OPENAI_API_KEY`、SIP password、private certificate
+- log: `apl.log`、systemd journal export、temporary file
+
+PJSIP/PJSUA2 native成果物は、各OS上で以下へ生成する。
+
+```text
+.deps/pjproject/pjsip-apps/src/swig/java/output/
+```
+
+native library名はOSにより異なる。
+
+- macOS: `libpjsua2.jnilib`
+- RHEL/Linux: `libpjsua2.so`
+
+## macOS開発環境
+
+### 前提
+
+- macOS Apple Silicon
+- Command Line Tools
+- Homebrew
+- Java 21
+- SWIG
+
+### 依存tool導入
+
+```sh
+scripts/bootstrap-macos-deps.sh
+```
+
+`bootstrap-macos-deps.sh`はHomebrew経由でSWIGを確認・導入する。Java 21は手元のJDKを利用する。
+
+### PJSIP/PJSUA2 Java binding build
+
+```sh
+scripts/build-pjsip-macos.sh
+```
+
+クリーン再build:
+
+```sh
+PJSIP_CLEAN=1 scripts/build-pjsip-macos.sh
+```
+
+version指定:
+
+```sh
+PJSIP_VERSION=2.17 scripts/build-pjsip-macos.sh
+```
+
+### 起動確認
+
+```sh
+scripts/check-config.sh
+scripts/check-pjsua2-java.sh
+scripts/run-pjsua2-startup-check.sh config/gateway.pjsua2.example.yaml
+```
+
+実SIP環境で待ち受ける場合:
+
+```sh
+scripts/run-pjsua2-local.sh config/gateway.local.yaml
+```
+
+ログを保存して要約イベントだけ確認する場合:
+
+```sh
+scripts/run-pjsua2-local.sh config/gateway.local.yaml > apl.log 2>&1
+grep 'GW_EVENT' apl.log
+```
+
+## RHEL 8.10デモ環境
+
+### 前提
+
+- RHEL 8.10 x86_64
+- Red Hat subscriptionが有効で、BaseOS/AppStream repositoryを利用できる
+- outbound HTTPSでOpenAI APIへ接続できる
+- SIP registrarへUDP 5060で到達できる
+- RTP用UDP 40000-50000を必要範囲で送受信できる
+
+### OS package導入
+
+root権限を持つuserで以下を実行する。
+
+```sh
+scripts/bootstrap-rhel-deps.sh
+```
+
+導入対象:
+
+- `git`
+- `gcc`
+- `gcc-c++`
+- `make`
+- `autoconf`
+- `automake`
+- `libtool`
+- `swig`
+- `java-21-openjdk-devel`
+
+Red HatのOpenJDK 21手順では、RHEL上のJDK導入に`java-21-openjdk-devel`を利用できる。
+
+### PJSIP/PJSUA2 Java binding build
+
+```sh
+scripts/build-pjsip-rhel.sh
+```
+
+クリーン再build:
+
+```sh
+PJSIP_CLEAN=1 scripts/build-pjsip-rhel.sh
+```
+
+version指定:
+
+```sh
+PJSIP_VERSION=2.17 scripts/build-pjsip-rhel.sh
+```
+
+### 実行userと配置
+
+例として、アプリを`/opt/telephony-openai-gw`に配置し、専用userで実行する。
+
+```sh
+sudo useradd --system --home-dir /opt/telephony-openai-gw --shell /sbin/nologin telephonygw
+sudo mkdir -p /opt/telephony-openai-gw
+sudo chown -R telephonygw:telephonygw /opt/telephony-openai-gw
+```
+
+Repositoryを配置する。
+
+```sh
+sudo -u telephonygw git clone https://github.com/keimei-yoritaka/telephony-openai-gw /opt/telephony-openai-gw
+```
+
+private repositoryのため、cloneにはGitHub credentialまたはdeploy keyが必要となる。デモ環境では、事前にclone済みのarchiveを転送して展開してもよい。
+
+### 設定ファイル
+
+設定ファイルは`/etc/telephony-openai-gw/gateway.yaml`に配置する。
+
+```sh
+sudo mkdir -p /etc/telephony-openai-gw
+sudo cp /opt/telephony-openai-gw/config/gateway.pjsua2.example.yaml /etc/telephony-openai-gw/gateway.yaml
+sudo chown root:telephonygw /etc/telephony-openai-gw/gateway.yaml
+sudo chmod 640 /etc/telephony-openai-gw/gateway.yaml
+```
+
+`gateway.yaml`では、SIP domain、user、registrar、bot設定、OpenAI model/voiceを実環境値へ変更する。SIP passwordやOpenAI API keyは直接commitしない。
+
+secretは`/etc/sysconfig/telephony-openai-gw`に配置する。
+
+```sh
+sudo tee /etc/sysconfig/telephony-openai-gw >/dev/null <<'ENV'
+OPENAI_API_KEY=replace-with-openai-api-key
+SIP_REGISTRATION_PASSWORD=replace-with-sip-password
+ENV
+sudo chown root:telephonygw /etc/sysconfig/telephony-openai-gw
+sudo chmod 640 /etc/sysconfig/telephony-openai-gw
+```
+
+### firewall
+
+SIP待受portとRTP port rangeを許可する。port番号は環境に合わせて調整する。
+
+```sh
+sudo firewall-cmd --permanent --add-port=5060/udp
+sudo firewall-cmd --permanent --add-port=40000-50000/udp
+sudo firewall-cmd --reload
+```
+
+### systemd service
+
+unit例を配置する。
+
+```sh
+sudo cp /opt/telephony-openai-gw/deploy/systemd/telephony-openai-gw.service /etc/systemd/system/telephony-openai-gw.service
+sudo systemctl daemon-reload
+sudo systemctl enable telephony-openai-gw
+```
+
+起動:
+
+```sh
+sudo systemctl start telephony-openai-gw
+```
+
+状態確認:
+
+```sh
+sudo systemctl status telephony-openai-gw
+sudo journalctl -u telephony-openai-gw -n 200
+sudo journalctl -u telephony-openai-gw | grep 'GW_EVENT'
+```
+
+停止:
+
+```sh
+sudo systemctl stop telephony-openai-gw
+```
+
+## デモ環境での確認観点
+
+1. 起動直後に`gateway_started`が出る。
+2. SIP Registration成功時に`sip_registration_state code=200`が出る。
+3. 着信時に`sip_invite_received`、`call_session_created`、`sip_call_answered`が出る。
+4. RTP接続時に`rtp_audio_bridge_attached`が出る。
+5. 初回挨拶時に`openai_initial_greeting_requested`と`openai_response_done`が出る。
+6. ユーザー発話時に`openai_user_speech_started`が出る。
+7. 切断時に`rtp_audio_bridge_closed`、`call_session_closed`が出る。
+8. `audio_queue_frame_dropped`が頻発しない。
+
+## stdout/stderrとログ保管
+
+RHELではsystemd/journaldでstdout/stderrを集約する。PJSIP nativeログとJavaアプリログは同じservice logに出るため、通常確認は`GW_EVENT`を抽出する。
+
+長期運用では以下を検討する。
+
+- Javaアプリ要約ログをJSON Linesとして別fileへ出す。
+- PJSIP native詳細ログを別fileへ出す。
+- `logrotate`またはjournald retention policyで保存期間と容量を制御する。
+- secret値がログに出ないことを定期確認する。
+
+## 参照
+
+- Red Hat Documentation: Installing and using Red Hat build of OpenJDK 21 on RHEL  
+  https://docs.redhat.com/documentation/red_hat_build_of_openjdk/21/html-single/installing_and_using_red_hat_build_of_openjdk_21_on_rhel/index
+- PJSIP Documentation: Building PJSUA2  
+  https://docs.pjsip.org/en/2.15.1/pjsua2/building.html
+- PJSIP Documentation: Build Instructions with GNU Build Systems  
+  https://docs.pjsip.org/en/2.17/get-started/posix/build_instructions.html

@@ -41,6 +41,14 @@ scripts/build-pjsip-macos.sh
 scripts/check-pjsua2-java.sh
 ```
 
+RHEL 8.10向けの依存導入とPJSIP/PJSUA2 Java binding build:
+
+```sh
+scripts/bootstrap-rhel-deps.sh
+scripts/build-pjsip-rhel.sh
+scripts/check-pjsua2-java.sh
+```
+
 PJSUA2 backendの起動確認:
 
 ```sh
@@ -90,6 +98,7 @@ grep 'GW_EVENT' apl.log
 ## 主要ドキュメント
 
 - [要件・実装計画](docs/requirements-and-implementation-plan.md)
+- [デプロイメントガイド](docs/deployment-guide.md)
 - [PJSUA2 Java Binding 調査メモ](docs/pjsua2-java-notes.md)
 - [RTP / OpenAI 音声ブリッジ実装計画](docs/rtp-media-bridge-implementation-plan.md)
 - [Agent向け指示](AGENTS.md)

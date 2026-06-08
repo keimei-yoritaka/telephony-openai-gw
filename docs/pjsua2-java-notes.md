@@ -53,6 +53,41 @@ versionを変更する場合:
 PJSIP_VERSION=2.17 scripts/build-pjsip-macos.sh
 ```
 
+## RHEL 8.10 build手順
+
+前提:
+
+- RHEL 8.10 x86_64。
+- BaseOS/AppStream repositoryを利用できる。
+- Java 21を利用する。
+- SWIGを利用する。
+
+依存tool導入:
+
+```sh
+scripts/bootstrap-rhel-deps.sh
+```
+
+PJSIP/PJSUA2 Java binding build:
+
+```sh
+scripts/build-pjsip-rhel.sh
+```
+
+PJSIP本体とSWIG Java bindingをクリーン再生成する場合:
+
+```sh
+PJSIP_CLEAN=1 scripts/build-pjsip-rhel.sh
+```
+
+versionを変更する場合:
+
+```sh
+PJSIP_VERSION=2.17 scripts/build-pjsip-rhel.sh
+```
+
+RHEL/Linuxでは、PJSUA2 Java native libraryは`libpjsua2.so`として生成される。macOSの`libpjsua2.jnilib`とはfile名が異なるため、実行scriptは`scripts/pjsua2-lib-name.sh`でOS別file名を判定する。
+
 ## 初期build方針
 
 - PJSIP tagは`2.17`を初期対象とする。
