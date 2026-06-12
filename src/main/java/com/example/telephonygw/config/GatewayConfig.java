@@ -58,7 +58,10 @@ public record GatewayConfig(
             String voice,
             String maxOutputTokens,
             String turnDetectionType,
-            String turnDetectionEagerness
+            String turnDetectionEagerness,
+            boolean transcriptLoggingEnabled,
+            String inputTranscriptionModel,
+            String inputTranscriptionLanguage
     ) {
         public void validate() {
             require("openai.apiKey", apiKey);
@@ -76,6 +79,7 @@ public record GatewayConfig(
                         "openai.turnDetectionType must be server_vad or semantic_vad: " + turnDetectionType);
             }
             require("openai.turnDetectionEagerness", turnDetectionEagerness);
+            require("openai.inputTranscriptionModel", inputTranscriptionModel);
         }
     }
 

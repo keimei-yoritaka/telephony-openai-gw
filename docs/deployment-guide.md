@@ -219,6 +219,7 @@ sudo systemctl start telephony-openai-gw
 sudo systemctl status telephony-openai-gw
 sudo journalctl -u telephony-openai-gw -n 200
 sudo journalctl -u telephony-openai-gw | grep 'GW_EVENT'
+sudo journalctl -u telephony-openai-gw | grep 'CALL_TRANSCRIPT'
 ```
 
 停止:
@@ -237,10 +238,13 @@ sudo systemctl stop telephony-openai-gw
 6. ユーザー発話時に`openai_user_speech_started`が出る。
 7. 切断時に`rtp_audio_bridge_closed`、`call_session_closed`が出る。
 8. `audio_queue_frame_dropped`が頻発しない。
+9. 会話内容確認が必要な場合、`CALL_TRANSCRIPT speaker=caller`と`CALL_TRANSCRIPT speaker=assistant`が出る。
 
 ## stdout/stderrとログ保管
 
 RHELではsystemd/journaldでstdout/stderrを集約する。PJSIP nativeログとJavaアプリログは同じservice logに出るため、通常確認は`GW_EVENT`を抽出する。
+
+会話本文の確認には`CALL_TRANSCRIPT`を抽出する。transcriptには通話内容が含まれるため、デモ環境で保存・共有する場合は、個人情報や顧客情報の扱いに注意する。
 
 長期運用では以下を検討する。
 

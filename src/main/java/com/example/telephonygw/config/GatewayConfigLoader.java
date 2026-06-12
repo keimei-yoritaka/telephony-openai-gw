@@ -36,7 +36,10 @@ public final class GatewayConfigLoader {
                         optionalValue(values, "openai.voice", "shimmer"),
                         optionalValue(values, "openai.maxOutputTokens", "inf"),
                         optionalValue(values, "openai.turnDetectionType", "semantic_vad"),
-                        optionalValue(values, "openai.turnDetectionEagerness", "low")
+                        optionalValue(values, "openai.turnDetectionEagerness", "low"),
+                        booleanValue(values, "openai.transcriptLoggingEnabled", true),
+                        optionalValue(values, "openai.inputTranscriptionModel", "gpt-realtime-whisper"),
+                        optionalValue(values, "openai.inputTranscriptionLanguage", "ja")
                 ),
                 new GatewayConfig.BotConfig(
                         value(values, "bot.systemInstructions"),
@@ -142,5 +145,19 @@ public final class GatewayConfigLoader {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(key + " must be an integer", e);
         }
+    }
+
+    private static boolean booleanValue(Map<String, String> values, String key, boolean defaultValue) {
+        String value = values.get(key);
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        if ("true".equalsIgnoreCase(value)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(value)) {
+            return false;
+        }
+        throw new IllegalArgumentException(key + " must be true or false");
     }
 }

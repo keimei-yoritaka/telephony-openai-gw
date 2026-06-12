@@ -77,6 +77,9 @@ public final class RealtimeClient implements AutoCloseable {
                 config.maxOutputTokens(),
                 config.turnDetectionType(),
                 config.turnDetectionEagerness(),
+                config.transcriptLoggingEnabled(),
+                config.inputTranscriptionModel(),
+                config.inputTranscriptionLanguage(),
                 systemInstructions,
                 audioBridge);
         session.open();

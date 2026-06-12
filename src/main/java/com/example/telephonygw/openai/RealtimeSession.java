@@ -36,6 +36,9 @@ public final class RealtimeSession implements AutoCloseable {
     private final String maxOutputTokens;
     private final String turnDetectionType;
     private final String turnDetectionEagerness;
+    private final boolean transcriptLoggingEnabled;
+    private final String inputTranscriptionModel;
+    private final String inputTranscriptionLanguage;
     private final String systemInstructions;
     private final AudioBridge audioBridge;
     private final AtomicBoolean open = new AtomicBoolean(false);
@@ -56,6 +59,9 @@ public final class RealtimeSession implements AutoCloseable {
             String maxOutputTokens,
             String turnDetectionType,
             String turnDetectionEagerness,
+            boolean transcriptLoggingEnabled,
+            String inputTranscriptionModel,
+            String inputTranscriptionLanguage,
             String systemInstructions,
             AudioBridge audioBridge
     ) {
@@ -66,6 +72,9 @@ public final class RealtimeSession implements AutoCloseable {
         this.maxOutputTokens = Objects.requireNonNull(maxOutputTokens, "maxOutputTokens");
         this.turnDetectionType = Objects.requireNonNull(turnDetectionType, "turnDetectionType");
         this.turnDetectionEagerness = Objects.requireNonNull(turnDetectionEagerness, "turnDetectionEagerness");
+        this.transcriptLoggingEnabled = transcriptLoggingEnabled;
+        this.inputTranscriptionModel = Objects.requireNonNull(inputTranscriptionModel, "inputTranscriptionModel");
+        this.inputTranscriptionLanguage = Objects.requireNonNull(inputTranscriptionLanguage, "inputTranscriptionLanguage");
         this.systemInstructions = Objects.requireNonNull(systemInstructions, "systemInstructions");
         this.audioBridge = Objects.requireNonNull(audioBridge, "audioBridge");
     }
@@ -93,7 +102,8 @@ public final class RealtimeSession implements AutoCloseable {
                     "voice", voice,
                     "inputRateHz", OPENAI_AUDIO_SAMPLE_RATE_HZ,
                     "maxOutputTokens", maxOutputTokens,
-                    "turnDetection", turnDetectionType);
+                    "turnDetection", turnDetectionType,
+                    "transcriptLoggingEnabled", transcriptLoggingEnabled);
         } catch (Exception e) {
             open.set(false);
             throw new IllegalStateException("Failed to open OpenAI Realtime WebSocket session", e);
@@ -184,9 +194,10 @@ public final class RealtimeSession implements AutoCloseable {
 
     private String sessionUpdateEvent() {
         return """
-                {"type":"session.update","session":{"type":"realtime","model":"%s","instructions":"%s","max_output_tokens":%s,"output_modalities":["audio"],"audio":{"input":{"format":{"type":"audio/pcm","rate":%d},"turn_detection":%s},"output":{"format":{"type":"audio/pcm","rate":%d},"voice":"%s"}}}}\
+                {"type":"session.update","session":{"type":"realtime","model":"%s","instructions":"%s","max_output_tokens":%s,"output_modalities":["audio"],"audio":{"input":{"format":{"type":"audio/pcm","rate":%d}%s,"turn_detection":%s},"output":{"format":{"type":"audio/pcm","rate":%d},"voice":"%s"}}}}\
                 """.formatted(json(model), json(systemInstructions), maxOutputTokensJson(),
-                OPENAI_AUDIO_SAMPLE_RATE_HZ, turnDetectionJson(), OPENAI_AUDIO_SAMPLE_RATE_HZ, json(voice));
+                OPENAI_AUDIO_SAMPLE_RATE_HZ, transcriptionJson(), turnDetectionJson(),
+                OPENAI_AUDIO_SAMPLE_RATE_HZ, json(voice));
     }
 
     private String maxOutputTokensJson() {
@@ -202,6 +213,16 @@ public final class RealtimeSession implements AutoCloseable {
         return """
                 {"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":800,"create_response":true,"interrupt_response":true}\
                 """;
+    }
+
+    private String transcriptionJson() {
+        if (!transcriptLoggingEnabled) {
+            return "";
+        }
+        String languageField = inputTranscriptionLanguage.isBlank()
+                ? ""
+                : ",\"language\":\"" + json(inputTranscriptionLanguage) + "\"";
+        return ",\"transcription\":{\"model\":\"" + json(inputTranscriptionModel) + "\"" + languageField + "}";
     }
 
     private static String json(String value) {
@@ -296,6 +317,17 @@ public final class RealtimeSession implements AutoCloseable {
                     queueOutputAudio(payload);
                 } else if (eventType.equals("input_audio_buffer.speech_started")) {
                     handleUserSpeechStarted(webSocket);
+                } else if (eventType.equals("conversation.item.input_audio_transcription.completed")) {
+                    logTranscript(
+                            "caller",
+                            extractStringField(payload, "item_id", 0),
+                            "",
+                            extractStringField(payload, "transcript", 0));
+                } else if (eventType.equals("conversation.item.input_audio_transcription.failed")) {
+                    logTranscriptFailure(
+                            "caller",
+                            extractStringField(payload, "item_id", 0),
+                            extractStringField(payload, "message", payload.indexOf("\"error\"")));
                 } else if (eventType.equals("response.created")) {
                     responseActive.set(true);
                     audioBridge.markOutboundActive(callSessionId);
@@ -316,6 +348,12 @@ public final class RealtimeSession implements AutoCloseable {
                             "responseQueuedFrames", currentResponseQueuedFrames,
                             "responseAudioMs", currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
                             "outboundDepth", audioBridge.outboundDepth(callSessionId));
+                } else if (eventType.equals("response.output_audio_transcript.done")) {
+                    logTranscript(
+                            "assistant",
+                            extractStringField(payload, "item_id", 0),
+                            extractStringField(payload, "response_id", 0),
+                            extractStringField(payload, "transcript", 0));
                 } else if (eventType.equals("response.done")) {
                     responseActive.set(false);
                     audioBridge.markOutboundComplete(callSessionId);
@@ -371,6 +409,7 @@ public final class RealtimeSession implements AutoCloseable {
                     || eventType.equals("input_audio_buffer.speech_started")
                     || eventType.equals("input_audio_buffer.speech_stopped")
                     || eventType.equals("input_audio_buffer.committed")
+                    || eventType.startsWith("conversation.item.input_audio_transcription")
                     || eventType.equals("response.created")
                     || eventType.equals("response.done")
                     || eventType.equals("error")
@@ -469,6 +508,30 @@ public final class RealtimeSession implements AutoCloseable {
                     "clearedFrames", clearedFrames);
         }
 
+        private void logTranscript(String speaker, String itemId, String responseId, String transcript) {
+            String text = transcript == null ? "" : transcript;
+            LOG.log(System.Logger.Level.INFO,
+                    "CALL_TRANSCRIPT sessionId={0} speaker={1} itemId={2} responseId={3} text=\"{4}\"",
+                    callSessionId, speaker, itemId, responseId, escapeLogText(text));
+            GatewayEventLogger.info(LOG, "call_transcript_logged",
+                    "sessionId", callSessionId,
+                    "speaker", speaker,
+                    "itemId", itemId,
+                    "responseId", responseId,
+                    "textLength", text.length());
+        }
+
+        private void logTranscriptFailure(String speaker, String itemId, String message) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "CALL_TRANSCRIPT_FAILED sessionId={0} speaker={1} itemId={2} message=\"{3}\"",
+                    callSessionId, speaker, itemId, escapeLogText(message));
+            GatewayEventLogger.warning(LOG, "call_transcript_failed",
+                    "sessionId", callSessionId,
+                    "speaker", speaker,
+                    "itemId", itemId,
+                    "message", message);
+        }
+
         private static String extractStringField(String payload, String fieldName, int fromIndex) {
             int startIndex = Math.max(0, fromIndex);
             String marker = "\"" + fieldName + "\"";
@@ -483,6 +546,18 @@ public final class RealtimeSession implements AutoCloseable {
                 return "unknown";
             }
             return unescapeJsonString(payload.substring(quoteStart + 1, quoteEnd));
+        }
+
+        private static String escapeLogText(String value) {
+            if (value == null) {
+                return "";
+            }
+            return value
+                    .replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t");
         }
 
         private static String extractJsonFieldSnippet(String payload, String fieldName) {

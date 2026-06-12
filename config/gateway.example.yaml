@@ -24,6 +24,9 @@ openai:
   maxOutputTokens: inf
   turnDetectionType: semantic_vad
   turnDetectionEagerness: low
+  transcriptLoggingEnabled: true
+  inputTranscriptionModel: gpt-realtime-whisper
+  inputTranscriptionLanguage: ja
 
 bot:
   systemInstructions: "あなたは電話応対を行うAIアシスタントです。回答は原則1文、できるだけ短く、相手が話し終わるまで待ってから返答してください。柔らかく落ち着いた女性的な声の印象で話してください。"

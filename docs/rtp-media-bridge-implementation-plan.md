@@ -247,6 +247,14 @@ OpenAI Realtime APIは低遅延の音声対話に利用でき、WebSocket経由�
 - 通話接続直後にアプリ側から先に挨拶できるように、call session作成時にRealtime sessionを非同期で開き、`response.create`で`bot.initialGreeting`の音声出力を要求する。PJSIPのincoming call callbackをWebSocket接続待ちでブロックしない。
 - 初回挨拶中に相手が話し始めた場合は、既存の`input_audio_buffer.speech_started`処理で進行中responseをcancelし、outbound音声を破棄して相手発話を優先する。
 
+会話transcriptログ:
+
+- 発信者側の音声認識結果は、Realtime sessionの`audio.input.transcription`を有効化し、`conversation.item.input_audio_transcription.completed`の`transcript`をログ出力する。
+- OpenAI側の音声応答は、`response.output_audio_transcript.done`の`transcript`をログ出力する。
+- 会話本文は`GW_EVENT`ではなく、`CALL_TRANSCRIPT sessionId=... speaker=caller|assistant text="..."`として出力する。これにより、`grep CALL_TRANSCRIPT apl.log`で会話内容だけを抽出できる。
+- 発信者側transcriptionは追加のASR処理となるため、`openai.transcriptLoggingEnabled`でON/OFFできるようにする。
+- transcript logには通話内容が含まれるため、顧客デモ環境ではlog保存期間、共有範囲、masking要否を運用上確認する。
+
 ### Step 5: PCMU最適化
 
 目的:

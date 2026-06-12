@@ -87,6 +87,14 @@ grep 'GW_EVENT' apl.log
 - `rtp_audio_bridge_closed`: RTP音声ブリッジ終了サマリー。
 - `call_session_closed`: 通話セッション終了。
 
+会話内容の確認には`CALL_TRANSCRIPT`を抽出します。
+
+```sh
+grep 'CALL_TRANSCRIPT' apl.log
+```
+
+発信者側の音声認識結果は`speaker=caller`、OpenAI側の音声応答transcriptは`speaker=assistant`として出力されます。発信者側transcriptionは`openai.transcriptLoggingEnabled`で有効化され、`openai.inputTranscriptionModel`と`openai.inputTranscriptionLanguage`でmodelと言語ヒントを指定します。transcriptには通話内容が含まれるため、logの保存・共有時は個人情報や機密情報の扱いに注意してください。
+
 アプリケーション側のログレベルは`config/*.yaml`の`logging.level`で指定します。対応値は`TRACE`、`DEBUG`、`INFO`、`WARN`、`WARNING`、`ERROR`です。
 
 ### stdout/stderr運用について
