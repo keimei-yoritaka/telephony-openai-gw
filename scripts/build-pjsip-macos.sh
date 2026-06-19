@@ -28,19 +28,38 @@ ensure_writable_file() {
   fi
 }
 
-patch_swig_doxygen_flag() {
+patch_pjsip_swig_makefiles() {
+  patched=0
   if swig -help 2>&1 | grep -q -- "-doxygen"; then
-    return
+    swig_has_doxygen=1
+  else
+    swig_has_doxygen=0
   fi
   for makefile in \
     "${ABS_PJPROJECT_DIR}/pjsip-apps/src/swig/java/Makefile" \
     "${ABS_PJPROJECT_DIR}/pjsip-apps/src/swig/python/Makefile"; do
     if [ -f "${makefile}" ]; then
       ensure_writable_file "${makefile}"
-      sed -i.bak 's/^GEN_DOC[[:space:]]*=.*-doxygen.*/GEN_DOC =/' "${makefile}"
+      if [ "${swig_has_doxygen}" = "0" ]; then
+        sed -i.bak 's/^GEN_DOC[[:space:]]*=.*-doxygen.*/GEN_DOC =/' "${makefile}"
+        patched=1
+      fi
     fi
   done
-  echo "SWIGが-doxygenをサポートしていないため、PJSIP SWIG MakefileのGEN_DOCを無効化しました。"
+
+  java_makefile="${ABS_PJPROJECT_DIR}/pjsip-apps/src/swig/java/Makefile"
+  if [ -f "${java_makefile}" ]; then
+    ensure_writable_file "${java_makefile}"
+    sed -i.bak 's|^MY_APP_JAVA[[:space:]]*:=.*|MY_APP_JAVA :=|' "${java_makefile}"
+    patched=1
+  fi
+
+  if [ "${swig_has_doxygen}" = "0" ]; then
+    echo "SWIGが-doxygenをサポートしていないため、PJSIP SWIG MakefileのGEN_DOCを無効化しました。"
+  fi
+  if [ "${patched}" = "1" ]; then
+    echo "PJSIP SWIG MakefileをGateway向けに補正しました。"
+  fi
 }
 
 if ! command -v git >/dev/null 2>&1; then
@@ -65,7 +84,7 @@ if [ ! -d "${ABS_PJPROJECT_DIR}/.git" ]; then
 fi
 
 cd "${ABS_PJPROJECT_DIR}"
-patch_swig_doxygen_flag
+patch_pjsip_swig_makefiles
 
 cat > pjlib/include/pj/config_site.h <<'CONFIG_SITE'
 #include <pj/config_site_sample.h>

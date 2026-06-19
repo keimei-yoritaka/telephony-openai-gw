@@ -242,6 +242,8 @@ sudo chown -R telephonygw:telephonygw /opt/telephony-openai-gw
 
 SWIGで`Unrecognized option -doxygen`が出た場合は、RHELに導入されたSWIGがPJSIPのSWIG Makefileに含まれる`-doxygen` optionに対応していないことが原因。Java binding生成にドキュメント変換は必須ではないため、`build-pjsip-rhel.sh`はSWIGが`-doxygen`非対応の場合にPJSIP配下のSWIG Makefileの`GEN_DOC`を自動で無効化する。最新script取得後に再実行する。
 
+`android/app/src/main/java/org/pjsip/pjsua2/app/MyApp.java`で`CodecInfoVector2`に対するfor-each compile errorが出た場合は、PJSIP同梱Android sampleのcompileが原因。Gateway実行にAndroid sampleは不要であり、必要なのは`org.pjsip.pjsua2`のJava binding本体とnative libraryである。`build-pjsip-rhel.sh`はPJSIPのSWIG Java MakefileからAndroid sample compile対象を自動で外すため、最新script取得後に再実行する。
+
 ### 実行userと配置
 
 アプリは`/opt/telephony-openai-gw`に配置済みで、専用user `telephonygw`が所有している前提とする。未実施の場合は「サーバへ配置する資材」の手順でRepository一式を配置する。
