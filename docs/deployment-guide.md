@@ -130,22 +130,45 @@ RHELサーバでは、まず本Repository一式を`/opt/telephony-openai-gw`へ�
 - `.deps/`配下のmacOS build成果物
 - `apl.log`などのlog file
 
-配置方法は、以下のどちらかを選ぶ。
+配置方法は、以下のいずれかを選ぶ。初回導入では、`bootstrap-rhel-deps.sh`実行前にgitが未導入でも使える「GitHub archiveをcurlで取得する場合」を推奨する。
+
+#### GitHub archiveをcurlで取得する場合
+
+RHELサーバに`curl`と`unzip`が導入済みである前提とする。private repositoryのため、GitHub tokenまたはfine-grained personal access tokenを事前に用意する。tokenには本Repositoryのcontents read権限が必要。
+
+```sh
+export GITHUB_TOKEN=replace-with-github-token
+id telephonygw >/dev/null 2>&1 || sudo useradd --system --home-dir /opt/telephony-openai-gw --shell /sbin/nologin telephonygw
+curl -L \
+  -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+  -H "Accept: application/vnd.github+json" \
+  -o /tmp/telephony-openai-gw.zip \
+  https://github.com/keimei-yoritaka/telephony-openai-gw/archive/refs/heads/main.zip
+sudo rm -rf /opt/telephony-openai-gw
+sudo mkdir -p /opt/telephony-openai-gw
+sudo rm -rf /tmp/telephony-openai-gw-unpack
+sudo unzip -q /tmp/telephony-openai-gw.zip -d /tmp/telephony-openai-gw-unpack
+sudo cp -a /tmp/telephony-openai-gw-unpack/telephony-openai-gw-main/. /opt/telephony-openai-gw/
+sudo chown -R telephonygw:telephonygw /opt/telephony-openai-gw
+rm -f /tmp/telephony-openai-gw.zip
+sudo rm -rf /tmp/telephony-openai-gw-unpack
+unset GITHUB_TOKEN
+```
 
 #### GitHubからcloneする場合
 
-private repositoryのため、GitHub credentialまたはdeploy keyを事前に用意する。
+この方法は、RHELサーバにgitが導入済みである場合、または`bootstrap-rhel-deps.sh`実行後に利用する。private repositoryのため、GitHub credentialまたはdeploy keyを事前に用意する。
 
 ```sh
 id telephonygw >/dev/null 2>&1 || sudo useradd --system --home-dir /opt/telephony-openai-gw --shell /sbin/nologin telephonygw
-sudo mkdir -p /opt
+sudo rm -rf /opt/telephony-openai-gw
 sudo git clone https://github.com/keimei-yoritaka/telephony-openai-gw /opt/telephony-openai-gw
 sudo chown -R telephonygw:telephonygw /opt/telephony-openai-gw
 ```
 
 #### archiveを転送する場合
 
-開発端末またはCI環境でarchiveを作成し、RHELサーバへ転送する。archiveにはsecretやlogを含めない。
+開発端末またはCI環境でarchiveを作成し、RHELサーバへ転送する。RHELサーバ側にはgitは不要。archiveにはsecretやlogを含めない。
 
 ```sh
 git archive --format=tar.gz --output=telephony-openai-gw.tar.gz main
@@ -156,6 +179,7 @@ RHELサーバ側で展開する。
 
 ```sh
 id telephonygw >/dev/null 2>&1 || sudo useradd --system --home-dir /opt/telephony-openai-gw --shell /sbin/nologin telephonygw
+sudo rm -rf /opt/telephony-openai-gw
 sudo mkdir -p /opt/telephony-openai-gw
 sudo tar -xzf /tmp/telephony-openai-gw.tar.gz -C /opt/telephony-openai-gw
 sudo chown -R telephonygw:telephonygw /opt/telephony-openai-gw
