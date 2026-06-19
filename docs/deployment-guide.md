@@ -105,6 +105,64 @@ grep 'GW_EVENT' apl.log
 - SIP registrarへUDP 5060で到達できる
 - RTP用UDP 40000-41000を必要範囲で送受信できる。RTCP用にRTP port + 1も使うため、firewall/NATでは41001まで許可する。
 
+### サーバへ配置する資材
+
+RHELサーバでは、まず本Repository一式を`/opt/telephony-openai-gw`へ配置する。以降の`bootstrap-rhel-deps.sh`、`build-pjsip-rhel.sh`、`run-pjsua2-local.sh`はこのRepository内のscriptとして実行する。
+
+配置対象:
+
+- Repository source一式
+- `scripts/`配下の導入・build・起動script
+- `config/gateway.pjsua2.example.yaml`
+- `deploy/systemd/telephony-openai-gw.service`
+- `docs/`配下の運用文書
+
+配置しないもの:
+
+- `config/gateway.local.yaml`
+- `.env`
+- OpenAI API key
+- SIP password
+- `.deps/`配下のmacOS build成果物
+- `apl.log`などのlog file
+
+配置方法は、以下のどちらかを選ぶ。
+
+#### GitHubからcloneする場合
+
+private repositoryのため、GitHub credentialまたはdeploy keyを事前に用意する。
+
+```sh
+id telephonygw >/dev/null 2>&1 || sudo useradd --system --home-dir /opt/telephony-openai-gw --shell /sbin/nologin telephonygw
+sudo mkdir -p /opt
+sudo git clone https://github.com/keimei-yoritaka/telephony-openai-gw /opt/telephony-openai-gw
+sudo chown -R telephonygw:telephonygw /opt/telephony-openai-gw
+```
+
+#### archiveを転送する場合
+
+開発端末またはCI環境でarchiveを作成し、RHELサーバへ転送する。archiveにはsecretやlogを含めない。
+
+```sh
+git archive --format=tar.gz --output=telephony-openai-gw.tar.gz main
+scp telephony-openai-gw.tar.gz user@rhel-host:/tmp/
+```
+
+RHELサーバ側で展開する。
+
+```sh
+id telephonygw >/dev/null 2>&1 || sudo useradd --system --home-dir /opt/telephony-openai-gw --shell /sbin/nologin telephonygw
+sudo mkdir -p /opt/telephony-openai-gw
+sudo tar -xzf /tmp/telephony-openai-gw.tar.gz -C /opt/telephony-openai-gw
+sudo chown -R telephonygw:telephonygw /opt/telephony-openai-gw
+```
+
+以降のcommandは、明示がない限りRepository rootで実行する。
+
+```sh
+cd /opt/telephony-openai-gw
+```
+
 ### OS package導入
 
 root権限を持つuserで以下を実行する。
@@ -147,21 +205,7 @@ PJSIP_VERSION=2.17 scripts/build-pjsip-rhel.sh
 
 ### 実行userと配置
 
-例として、アプリを`/opt/telephony-openai-gw`に配置し、専用userで実行する。
-
-```sh
-sudo useradd --system --home-dir /opt/telephony-openai-gw --shell /sbin/nologin telephonygw
-sudo mkdir -p /opt/telephony-openai-gw
-sudo chown -R telephonygw:telephonygw /opt/telephony-openai-gw
-```
-
-Repositoryを配置する。
-
-```sh
-sudo -u telephonygw git clone https://github.com/keimei-yoritaka/telephony-openai-gw /opt/telephony-openai-gw
-```
-
-private repositoryのため、cloneにはGitHub credentialまたはdeploy keyが必要となる。デモ環境では、事前にclone済みのarchiveを転送して展開してもよい。
+アプリは`/opt/telephony-openai-gw`に配置済みで、専用user `telephonygw`が所有している前提とする。未実施の場合は「サーバへ配置する資材」の手順でRepository一式を配置する。
 
 ### 設定ファイル
 
