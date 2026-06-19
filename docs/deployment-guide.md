@@ -191,20 +191,29 @@ Red HatのOpenJDK 21手順では、RHEL上のJDK導入に`java-21-openjdk-devel`
 
 ### PJSIP/PJSUA2 Java binding build
 
+PJSIP/PJSUA2 Java binding buildは、Repository所有userである`telephonygw`として実行する。`/opt/telephony-openai-gw`は`telephonygw`所有のため、EC2へSSH接続したOS userのまま実行すると`.deps/pjproject`や`config_site.h`へ書き込めず、permission errorになる。
+
 ```sh
-scripts/build-pjsip-rhel.sh
+sudo -u telephonygw scripts/build-pjsip-rhel.sh
 ```
 
 クリーン再build:
 
 ```sh
-PJSIP_CLEAN=1 scripts/build-pjsip-rhel.sh
+sudo -u telephonygw env PJSIP_CLEAN=1 scripts/build-pjsip-rhel.sh
 ```
 
 version指定:
 
 ```sh
-PJSIP_VERSION=2.17 scripts/build-pjsip-rhel.sh
+sudo -u telephonygw env PJSIP_VERSION=2.17 scripts/build-pjsip-rhel.sh
+```
+
+permission errorが出た場合は、Repository配下の所有者を確認する。
+
+```sh
+ls -ld /opt/telephony-openai-gw /opt/telephony-openai-gw/.deps /opt/telephony-openai-gw/.deps/pjproject 2>/dev/null || true
+sudo chown -R telephonygw:telephonygw /opt/telephony-openai-gw
 ```
 
 ### 実行userと配置

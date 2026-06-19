@@ -61,6 +61,8 @@ PJSIP_VERSION=2.17 scripts/build-pjsip-macos.sh
 - BaseOS/AppStream repositoryを利用できる。
 - Java 21を利用する。
 - SWIGを利用する。
+- EC2デモ環境ではRepositoryを`/opt/telephony-openai-gw`へ配置し、`telephonygw` user所有にする。
+- PJSIP/PJSUA2 buildはRepository所有userである`telephonygw`として実行する。
 
 依存tool導入:
 
@@ -71,19 +73,19 @@ scripts/bootstrap-rhel-deps.sh
 PJSIP/PJSUA2 Java binding build:
 
 ```sh
-scripts/build-pjsip-rhel.sh
+sudo -u telephonygw scripts/build-pjsip-rhel.sh
 ```
 
 PJSIP本体とSWIG Java bindingをクリーン再生成する場合:
 
 ```sh
-PJSIP_CLEAN=1 scripts/build-pjsip-rhel.sh
+sudo -u telephonygw env PJSIP_CLEAN=1 scripts/build-pjsip-rhel.sh
 ```
 
 versionを変更する場合:
 
 ```sh
-PJSIP_VERSION=2.17 scripts/build-pjsip-rhel.sh
+sudo -u telephonygw env PJSIP_VERSION=2.17 scripts/build-pjsip-rhel.sh
 ```
 
 RHEL/Linuxでは、PJSUA2 Java native libraryは`libpjsua2.so`として生成される。macOSの`libpjsua2.jnilib`とはfile名が異なるため、実行scriptは`scripts/pjsua2-lib-name.sh`でOS別file名を判定する。

@@ -9,6 +9,25 @@ ROOT_DIR="$(pwd)"
 ABS_PJPROJECT_DIR="${ROOT_DIR}/${PJPROJECT_DIR}"
 ABS_PREFIX_DIR="${ROOT_DIR}/${PREFIX_DIR}"
 
+fail_permission() {
+  echo "書き込み権限がありません: $1" >&2
+  echo "Repository所有userで実行するか、所有者を修正してください。" >&2
+  echo "例: sudo chown -R telephonygw:telephonygw ${ROOT_DIR}" >&2
+  exit 1
+}
+
+ensure_writable_dir() {
+  if [ -e "$1" ] && [ ! -w "$1" ]; then
+    fail_permission "$1"
+  fi
+}
+
+ensure_writable_file() {
+  if [ -e "$1" ] && [ ! -w "$1" ]; then
+    fail_permission "$1"
+  fi
+}
+
 if [ "$(uname -s)" != "Linux" ]; then
   echo "scripts/build-pjsip-rhel.shはLinux/RHEL向けです。" >&2
   exit 1
@@ -29,8 +48,14 @@ if ! command -v javac >/dev/null 2>&1; then
   exit 1
 fi
 
+ensure_writable_dir "${ROOT_DIR}"
+ensure_writable_dir "${ROOT_DIR}/${DEPS_DIR}"
+ensure_writable_dir "${ABS_PJPROJECT_DIR}"
+ensure_writable_dir "${ABS_PREFIX_DIR}"
+ensure_writable_file "${ABS_PJPROJECT_DIR}/pjlib/include/pj/config_site.h"
+
 if [ ! -d "${ABS_PJPROJECT_DIR}/.git" ]; then
-  mkdir -p "${DEPS_DIR}"
+  mkdir -p "${ROOT_DIR}/${DEPS_DIR}"
   git clone --depth 1 --branch "${PJSIP_VERSION}" https://github.com/pjsip/pjproject.git "${ABS_PJPROJECT_DIR}"
 fi
 

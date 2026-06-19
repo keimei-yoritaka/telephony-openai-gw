@@ -45,7 +45,7 @@ RHEL 8.10向けの依存導入とPJSIP/PJSUA2 Java binding build:
 
 ```sh
 scripts/bootstrap-rhel-deps.sh
-scripts/build-pjsip-rhel.sh
+sudo -u telephonygw scripts/build-pjsip-rhel.sh
 scripts/check-pjsua2-java.sh
 ```
 
