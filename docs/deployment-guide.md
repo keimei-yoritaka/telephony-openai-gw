@@ -99,15 +99,19 @@ grep 'GW_EVENT' apl.log
 
 ### 前提
 
-- RHEL 8.10 x86_64
+- AWS EC2上のRHEL 8.10 x86_64
+- EC2へSSH接続できるOS userを利用する。root userで直接作業せず、root権限が必要な操作は`sudo`で実行する。
 - Red Hat subscriptionが有効で、BaseOS/AppStream repositoryを利用できる
 - outbound HTTPSでOpenAI APIへ接続できる
 - SIP registrarへUDP 5060で到達できる
 - RTP用UDP 40000-41000を必要範囲で送受信できる。RTCP用にRTP port + 1も使うため、firewall/NATでは41001まで許可する。
+- EC2 Security Groupで、SIP用UDP 5060およびRTP/RTCP用UDP 40000-41001のInboundを必要な送信元から許可する。
 
 ### サーバへ配置する資材
 
 RHELサーバでは、まず本Repository一式を`/opt/telephony-openai-gw`へ配置する。以降の`bootstrap-rhel-deps.sh`、`build-pjsip-rhel.sh`、`run-pjsua2-local.sh`はこのRepository内のscriptとして実行する。
+
+以下のサーバ側commandは、EC2へSSH接続したOS userで実行する。`/opt`や`/etc`への書き込み、user作成、service登録などroot権限が必要な操作は`sudo`を付ける。
 
 配置対象:
 
@@ -165,7 +169,7 @@ cd /opt/telephony-openai-gw
 
 ### OS package導入
 
-root権限を持つuserで以下を実行する。
+EC2へSSH接続したOS userで以下を実行する。package導入はscript内部で`sudo dnf install ...`を実行する。
 
 ```sh
 scripts/bootstrap-rhel-deps.sh
@@ -233,7 +237,7 @@ sudo chmod 640 /etc/sysconfig/telephony-openai-gw
 
 ### firewall
 
-SIP待受portとRTP port rangeを許可する。port番号は環境に合わせて調整する。
+EC2 Security GroupでSIP/RTPのInboundを許可したうえで、OS側firewalldを利用している場合はSIP待受portとRTP port rangeも許可する。port番号は環境に合わせて調整する。firewalldを利用していないAMI構成では、この手順は不要な場合がある。
 
 ```sh
 sudo firewall-cmd --permanent --add-port=5060/udp
