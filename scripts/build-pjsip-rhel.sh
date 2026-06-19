@@ -28,6 +28,21 @@ ensure_writable_file() {
   fi
 }
 
+patch_swig_doxygen_flag() {
+  if swig -help 2>&1 | grep -q -- "-doxygen"; then
+    return
+  fi
+  for makefile in \
+    "${ABS_PJPROJECT_DIR}/pjsip-apps/src/swig/java/Makefile" \
+    "${ABS_PJPROJECT_DIR}/pjsip-apps/src/swig/python/Makefile"; do
+    if [ -f "${makefile}" ]; then
+      ensure_writable_file "${makefile}"
+      sed -i.bak 's/^GEN_DOC[[:space:]]*=.*-doxygen.*/GEN_DOC =/' "${makefile}"
+    fi
+  done
+  echo "SWIGが-doxygenをサポートしていないため、PJSIP SWIG MakefileのGEN_DOCを無効化しました。"
+}
+
 if [ "$(uname -s)" != "Linux" ]; then
   echo "scripts/build-pjsip-rhel.shはLinux/RHEL向けです。" >&2
   exit 1
@@ -60,6 +75,7 @@ if [ ! -d "${ABS_PJPROJECT_DIR}/.git" ]; then
 fi
 
 cd "${ABS_PJPROJECT_DIR}"
+patch_swig_doxygen_flag
 
 cat > pjlib/include/pj/config_site.h <<'CONFIG_SITE'
 #include <pj/config_site_sample.h>

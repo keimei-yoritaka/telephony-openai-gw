@@ -240,6 +240,8 @@ ls -ld /opt/telephony-openai-gw /opt/telephony-openai-gw/.deps /opt/telephony-op
 sudo chown -R telephonygw:telephonygw /opt/telephony-openai-gw
 ```
 
+SWIGで`Unrecognized option -doxygen`が出た場合は、RHELに導入されたSWIGがPJSIPのSWIG Makefileに含まれる`-doxygen` optionに対応していないことが原因。Java binding生成にドキュメント変換は必須ではないため、`build-pjsip-rhel.sh`はSWIGが`-doxygen`非対応の場合にPJSIP配下のSWIG Makefileの`GEN_DOC`を自動で無効化する。最新script取得後に再実行する。
+
 ### 実行userと配置
 
 アプリは`/opt/telephony-openai-gw`に配置済みで、専用user `telephonygw`が所有している前提とする。未実施の場合は「サーバへ配置する資材」の手順でRepository一式を配置する。

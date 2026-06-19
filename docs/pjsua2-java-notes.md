@@ -90,6 +90,8 @@ sudo -u telephonygw env PJSIP_VERSION=2.17 scripts/build-pjsip-rhel.sh
 
 RHEL/Linuxでは、PJSUA2 Java native libraryは`libpjsua2.so`として生成される。macOSの`libpjsua2.jnilib`とはfile名が異なるため、実行scriptは`scripts/pjsua2-lib-name.sh`でOS別file名を判定する。
 
+RHELのSWIGでは`-doxygen` optionが認識されず、PJSIPのSWIG Java binding生成で`Unrecognized option -doxygen`になる場合がある。`build-pjsip-rhel.sh`はSWIGのhelpを確認し、`-doxygen`非対応の場合はPJSIP配下のSWIG Makefileの`GEN_DOC`を空にしてからbuildする。これはbinding生成に必要なC++ wrapperやJava class生成には影響せず、SWIG由来のドキュメント変換だけを無効化する対応である。
+
 ## 初期build方針
 
 - PJSIP tagは`2.17`を初期対象とする。
