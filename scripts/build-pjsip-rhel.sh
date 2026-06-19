@@ -51,6 +51,7 @@ patch_pjsip_swig_makefiles() {
   if [ -f "${java_makefile}" ]; then
     ensure_writable_file "${java_makefile}"
     sed -i.bak 's|^MY_APP_JAVA[[:space:]]*:=.*|MY_APP_JAVA :=|' "${java_makefile}"
+    sed -i.bak 's|^java:[[:space:]]*\$(MY_PACKAGE_PATH)/Error.class.*|java: $(MY_PACKAGE_PATH)/Error.class|' "${java_makefile}"
     patched=1
   fi
 

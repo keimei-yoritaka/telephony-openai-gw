@@ -92,7 +92,7 @@ RHEL/Linuxでは、PJSUA2 Java native libraryは`libpjsua2.so`として生成さ
 
 RHELのSWIGでは`-doxygen` optionが認識されず、PJSIPのSWIG Java binding生成で`Unrecognized option -doxygen`になる場合がある。`build-pjsip-rhel.sh`はSWIGのhelpを確認し、`-doxygen`非対応の場合はPJSIP配下のSWIG Makefileの`GEN_DOC`を空にしてからbuildする。これはbinding生成に必要なC++ wrapperやJava class生成には影響せず、SWIG由来のドキュメント変換だけを無効化する対応である。
 
-PJSIP 2.17のSWIG Java Makefileは、Linux/macOS向けbuildでもAndroid sampleの`MyApp.java`をjavac対象に含める。環境によっては`CodecInfoVector2`がfor-each不可としてcompile errorになるが、Gateway実行にはAndroid sampleは不要である。`build-pjsip-rhel.sh`および`build-pjsip-macos.sh`は`MY_APP_JAVA`を空に補正し、PJSUA2 Java binding本体だけをcompileする。
+PJSIP 2.17のSWIG Java Makefileは、Linux/macOS向けbuildでもsampleの`sample.java`やAndroid sample helperの`MyApp.java`をjavac対象に含める。環境によっては`CodecInfoVector2`がfor-each不可になったり、`sample.java`から`MyApp`、`MyCall`、`MyAccount`などを解決できずcompile errorになるが、Gateway実行にはPJSIP sampleは不要である。`build-pjsip-rhel.sh`および`build-pjsip-macos.sh`は`MY_APP_JAVA`を空にし、`java` targetを`Error.class`のみに補正して、PJSUA2 Java binding本体だけをcompileする。
 
 ## 初期build方針
 
