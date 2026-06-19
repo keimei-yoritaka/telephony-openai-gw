@@ -19,7 +19,9 @@ public record GatewayConfig(
             String transport,
             String ipVersion,
             String codec,
-            String publicContactAddress
+            String publicContactAddress,
+            int rtpPortStart,
+            int rtpPortEnd
     ) {
         public void validate() {
             require("sip.backend", backend);
@@ -31,6 +33,15 @@ public record GatewayConfig(
             requireEquals("sip.transport", transport, "UDP");
             requireEquals("sip.ipVersion", ipVersion, "IPv4");
             requireEquals("sip.codec", codec, "PCMU");
+            requireRange("sip.rtpPortStart", rtpPortStart, 1024, 65534);
+            requireRange("sip.rtpPortEnd", rtpPortEnd, 1024, 65534);
+            requireEven("sip.rtpPortStart", rtpPortStart);
+            requireEven("sip.rtpPortEnd", rtpPortEnd);
+            if (rtpPortStart >= rtpPortEnd) {
+                throw new IllegalArgumentException(
+                        "sip.rtpPortStart must be smaller than sip.rtpPortEnd: "
+                                + rtpPortStart + " >= " + rtpPortEnd);
+            }
         }
     }
 
@@ -124,6 +135,12 @@ public record GatewayConfig(
     private static void requireRange(String key, int value, int min, int max) {
         if (value < min || value > max) {
             throw new IllegalArgumentException(key + " must be between " + min + " and " + max + ": " + value);
+        }
+    }
+
+    private static void requireEven(String key, int value) {
+        if (value % 2 != 0) {
+            throw new IllegalArgumentException(key + " must be even: " + value);
         }
     }
 

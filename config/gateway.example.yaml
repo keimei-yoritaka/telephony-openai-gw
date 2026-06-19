@@ -8,6 +8,9 @@ sip:
   # 空の場合、REGISTER応答のVia received/rportからNAT external側IPを自動検出する。
   # 自動検出を使わず固定したい場合は、router/NATのexternal側IPまたは名前を指定する。
   publicContactAddress: ""
+  # RTP portは偶数のみを指定する。RTCPはRTP port + 1を使う。
+  rtpPortStart: 40000
+  rtpPortEnd: 41000
 
 registration:
   domain: example.com

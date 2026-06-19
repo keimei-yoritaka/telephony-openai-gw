@@ -20,7 +20,9 @@ public final class GatewayConfigLoader {
                         value(values, "sip.transport"),
                         value(values, "sip.ipVersion"),
                         value(values, "sip.codec"),
-                        optionalValue(values, "sip.publicContactAddress")
+                        optionalValue(values, "sip.publicContactAddress"),
+                        intValue(values, "sip.rtpPortStart", 40000),
+                        intValue(values, "sip.rtpPortEnd", 41000)
                 ),
                 new GatewayConfig.RegistrationConfig(
                         value(values, "registration.domain"),

@@ -103,7 +103,7 @@ grep 'GW_EVENT' apl.log
 - Red Hat subscriptionが有効で、BaseOS/AppStream repositoryを利用できる
 - outbound HTTPSでOpenAI APIへ接続できる
 - SIP registrarへUDP 5060で到達できる
-- RTP用UDP 40000-50000を必要範囲で送受信できる
+- RTP用UDP 40000-41000を必要範囲で送受信できる。RTCP用にRTP port + 1も使うため、firewall/NATでは41001まで許可する。
 
 ### OS package導入
 
@@ -193,7 +193,7 @@ SIP待受portとRTP port rangeを許可する。port番号は環境に合わせ�
 
 ```sh
 sudo firewall-cmd --permanent --add-port=5060/udp
-sudo firewall-cmd --permanent --add-port=40000-50000/udp
+sudo firewall-cmd --permanent --add-port=40000-41001/udp
 sudo firewall-cmd --reload
 ```
 

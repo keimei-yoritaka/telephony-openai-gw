@@ -14,8 +14,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddressObserver {
     private static final System.Logger LOG = System.getLogger(Pjsua2SipEndpoint.class.getName());
-    private static final long RTP_PORT_START = 40000L;
-    private static final long RTP_PORT_RANGE = 10000L;
 
     private final SipConfig sipConfig;
     private final RegistrationConfig registrationConfig;
@@ -161,8 +159,8 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         Object mediaConfig = invoke(accountConfig, "getMediaConfig");
         Object mediaTransportConfig = invoke(mediaConfig, "getTransportConfig");
         invoke(mediaTransportConfig, "setBoundAddress", sipConfig.bindAddress());
-        invoke(mediaTransportConfig, "setPort", RTP_PORT_START);
-        invoke(mediaTransportConfig, "setPortRange", RTP_PORT_RANGE);
+        invoke(mediaTransportConfig, "setPort", (long) sipConfig.rtpPortStart());
+        invoke(mediaTransportConfig, "setPortRange", (long) rtpPortRange());
         invoke(mediaTransportConfig, "setRandomizePort", true);
         String publicAddress = effectivePublicAddress();
         if (!publicAddress.isBlank()) {
@@ -175,8 +173,12 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
                 "Configured PJSUA2 media transport NAT advertisement: publicAddress={0}, bindAddress={1}, rtpPortRange={2}-{3}, randomizePort=true, streamKeepAlive=true",
                 publicAddress.isBlank() ? "(auto)" : publicAddress,
                 sipConfig.bindAddress(),
-                RTP_PORT_START,
-                RTP_PORT_START + RTP_PORT_RANGE);
+                sipConfig.rtpPortStart(),
+                sipConfig.rtpPortEnd());
+    }
+
+    private int rtpPortRange() {
+        return sipConfig.rtpPortEnd() - sipConfig.rtpPortStart();
     }
 
     private void applyDetectedPublicAddress(String publicAddress) {
