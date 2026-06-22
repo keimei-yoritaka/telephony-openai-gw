@@ -373,7 +373,7 @@ public final class RealtimeSession implements AutoCloseable {
                             "outboundDepth", audioBridge.outboundDepth(callSessionId));
                 }
                 if (shouldLog(eventType)) {
-                    LOG.log(System.Logger.Level.INFO,
+                    LOG.log(System.Logger.Level.DEBUG,
                             "Received OpenAI Realtime event: sessionId={0}, type={1}",
                             callSessionId, eventType);
                 }
