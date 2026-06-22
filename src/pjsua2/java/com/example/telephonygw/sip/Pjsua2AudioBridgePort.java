@@ -144,7 +144,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
     }
 
     private static byte[] copyPayload(ByteVector source, int frameSize) {
-        int size = Math.min(frameSize, source.size());
+        int size = (int) Math.min((long) frameSize, source.size());
         byte[] payload = new byte[size];
         for (int i = 0; i < size; i++) {
             payload[i] = (byte) (source.get(i) & 0xFF);
