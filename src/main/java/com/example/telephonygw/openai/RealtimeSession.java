@@ -285,6 +285,12 @@ public final class RealtimeSession implements AutoCloseable {
         private final AtomicLong queuedOutputFrames;
         private final AtomicBoolean responseActive = new AtomicBoolean(false);
         private final StringBuilder message = new StringBuilder();
+        private long speechStartedNanos;
+        private long speechStoppedNanos;
+        private long inputCommittedNanos;
+        private long responseCreatedNanos;
+        private long firstAudioDeltaNanos;
+        private long outputAudioDoneNanos;
         private long currentResponseChunks;
         private long currentResponsePcm24Bytes;
         private long currentResponseQueuedFrames;
@@ -341,10 +347,26 @@ public final class RealtimeSession implements AutoCloseable {
                             "message", extractStringField(payload, "message", 0));
                     return WebSocket.Listener.super.onText(webSocket, data, last);
                 }
+                long eventNanos = System.nanoTime();
                 if (eventType.equals("response.output_audio.delta") && responseActive.get()) {
+                    if (firstAudioDeltaNanos == 0L) {
+                        firstAudioDeltaNanos = eventNanos;
+                        logFirstAudioLatency();
+                    }
                     queueOutputAudio(payload);
                 } else if (eventType.equals("input_audio_buffer.speech_started")) {
+                    speechStartedNanos = eventNanos;
                     handleUserSpeechStarted(webSocket);
+                } else if (eventType.equals("input_audio_buffer.speech_stopped")) {
+                    speechStoppedNanos = eventNanos;
+                    GatewayEventLogger.info(LOG, "openai_user_speech_stopped",
+                            "sessionId", callSessionId,
+                            "speechDurationMs", elapsedMillis(speechStartedNanos, speechStoppedNanos));
+                } else if (eventType.equals("input_audio_buffer.committed")) {
+                    inputCommittedNanos = eventNanos;
+                    GatewayEventLogger.info(LOG, "openai_input_audio_committed",
+                            "sessionId", callSessionId,
+                            "commitAfterSpeechStoppedMs", elapsedMillis(speechStoppedNanos, inputCommittedNanos));
                 } else if (eventType.equals("conversation.item.input_audio_transcription.completed")) {
                     logTranscript(
                             "caller",
@@ -357,24 +379,31 @@ public final class RealtimeSession implements AutoCloseable {
                             extractStringField(payload, "item_id", 0),
                             extractStringField(payload, "message", payload.indexOf("\"error\"")));
                 } else if (eventType.equals("response.created")) {
+                    resetCurrentResponseStats();
+                    responseCreatedNanos = eventNanos;
                     responseActive.set(true);
                     audioBridge.markOutboundActive(callSessionId);
-                    resetCurrentResponseStats();
                     GatewayEventLogger.info(LOG, "openai_response_created",
                             "sessionId", callSessionId);
                 } else if (eventType.equals("response.output_audio.done")) {
+                    outputAudioDoneNanos = eventNanos;
                     audioBridge.markOutboundComplete(callSessionId);
                     LOG.log(System.Logger.Level.INFO,
-                            "OpenAI output audio completed: sessionId={0}, responseChunks={1}, responsePcm24Bytes={2}, responseQueuedFrames={3}, responseAudioMs={4}, pendingBytes={5}, outboundDepth={6}",
+                            "OpenAI output audio completed: sessionId={0}, responseChunks={1}, responsePcm24Bytes={2}, responseQueuedFrames={3}, responseAudioMs={4}, firstAudioLatencyMs={5}, outputDurationMs={6}, pendingBytes={7}, outboundDepth={8}",
                             callSessionId, currentResponseChunks, currentResponsePcm24Bytes,
                             currentResponseQueuedFrames,
                             currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
+                            elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
+                            elapsedMillis(firstAudioDeltaNanos, outputAudioDoneNanos),
                             pendingOutputPcm8.size(), audioBridge.outboundDepth(callSessionId));
                     GatewayEventLogger.info(LOG, "openai_output_audio_done",
                             "sessionId", callSessionId,
                             "responseChunks", currentResponseChunks,
                             "responseQueuedFrames", currentResponseQueuedFrames,
                             "responseAudioMs", currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
+                            "firstAudioLatencyMs", elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
+                            "responseCreatedToFirstAudioMs", elapsedMillis(responseCreatedNanos, firstAudioDeltaNanos),
+                            "outputDurationMs", elapsedMillis(firstAudioDeltaNanos, outputAudioDoneNanos),
                             "outboundDepth", audioBridge.outboundDepth(callSessionId));
                 } else if (eventType.equals("response.output_audio_transcript.done")) {
                     logTranscript(
@@ -386,18 +415,23 @@ public final class RealtimeSession implements AutoCloseable {
                     responseActive.set(false);
                     audioBridge.markOutboundComplete(callSessionId);
                     LOG.log(System.Logger.Level.INFO,
-                            "OpenAI response done details: sessionId={0}, status={1}, statusDetails={2}, responseQueuedFrames={3}, responseAudioMs={4}, outboundDepth={5}",
+                            "OpenAI response done details: sessionId={0}, status={1}, statusDetails={2}, responseQueuedFrames={3}, responseAudioMs={4}, firstAudioLatencyMs={5}, responseTotalLatencyMs={6}, outboundDepth={7}",
                             callSessionId,
                             extractStringField(payload, "status", 0),
                             extractJsonFieldSnippet(payload, "status_details"),
                             currentResponseQueuedFrames,
                             currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
+                            elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
+                            elapsedMillis(inputCommittedNanos, eventNanos),
                             audioBridge.outboundDepth(callSessionId));
                     GatewayEventLogger.info(LOG, "openai_response_done",
                             "sessionId", callSessionId,
                             "status", extractStringField(payload, "status", 0),
                             "responseQueuedFrames", currentResponseQueuedFrames,
                             "responseAudioMs", currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
+                            "firstAudioLatencyMs", elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
+                            "responseCreatedToFirstAudioMs", elapsedMillis(responseCreatedNanos, firstAudioDeltaNanos),
+                            "responseTotalLatencyMs", elapsedMillis(inputCommittedNanos, eventNanos),
                             "outboundDepth", audioBridge.outboundDepth(callSessionId));
                 }
                 if (shouldLog(eventType)) {
@@ -499,9 +533,24 @@ public final class RealtimeSession implements AutoCloseable {
             currentResponseChunks = 0;
             currentResponsePcm24Bytes = 0;
             currentResponseQueuedFrames = 0;
+            responseCreatedNanos = 0L;
+            firstAudioDeltaNanos = 0L;
+            outputAudioDoneNanos = 0L;
             synchronized (pendingOutputPcm8) {
                 pendingOutputPcm8.reset();
             }
+        }
+
+        private void logFirstAudioLatency() {
+            long commitToAudioMs = elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos);
+            long responseToAudioMs = elapsedMillis(responseCreatedNanos, firstAudioDeltaNanos);
+            LOG.log(System.Logger.Level.INFO,
+                    "OpenAI first audio delta latency: sessionId={0}, commitToFirstAudioMs={1}, responseCreatedToFirstAudioMs={2}",
+                    callSessionId, commitToAudioMs, responseToAudioMs);
+            GatewayEventLogger.info(LOG, "openai_response_latency",
+                    "sessionId", callSessionId,
+                    "commitToFirstAudioMs", commitToAudioMs,
+                    "responseCreatedToFirstAudioMs", responseToAudioMs);
         }
 
         private void handleUserSpeechStarted(WebSocket webSocket) {
@@ -570,6 +619,13 @@ public final class RealtimeSession implements AutoCloseable {
                 return "unknown";
             }
             return unescapeJsonString(payload.substring(quoteStart + 1, quoteEnd));
+        }
+
+        private static long elapsedMillis(long startNanos, long endNanos) {
+            if (startNanos <= 0L || endNanos <= 0L || endNanos < startNanos) {
+                return -1L;
+            }
+            return TimeUnit.NANOSECONDS.toMillis(endNanos - startNanos);
         }
 
         private static String escapeLogText(String value) {

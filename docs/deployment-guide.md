@@ -324,6 +324,7 @@ sudo systemctl stop telephony-openai-gw
 7. 切断時に`rtp_audio_bridge_closed`、`call_session_closed`が出る。
 8. `audio_queue_frame_dropped`が頻発しない。
 9. 会話内容確認が必要な場合、`CALL_TRANSCRIPT speaker=caller`と`CALL_TRANSCRIPT speaker=assistant`が出る。
+10. OpenAI応答遅延を見る場合、`openai_response_latency commitToFirstAudioMs=...`を確認する。初回挨拶などユーザー音声commitがない応答では`-1`になる。
 
 ## stdout/stderrとログ保管
 

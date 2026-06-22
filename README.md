@@ -83,6 +83,7 @@ grep 'GW_EVENT' apl.log
 - `rtp_audio_bridge_attached`: RTP音声ブリッジ接続。
 - `openai_initial_greeting_requested`: 初回挨拶をOpenAIへ要求。
 - `openai_user_speech_started`: ユーザー発話検出。AI応答を割り込んだ場合は`interruptedResponse=true`。
+- `openai_response_latency`: OpenAI応答遅延。`commitToFirstAudioMs`はユーザー音声commitから最初の音声deltaまでの実測値。
 - `openai_response_done`: AI応答生成完了。
 - `rtp_audio_bridge_closed`: RTP音声ブリッジ終了サマリー。
 - `call_session_closed`: 通話セッション終了。
