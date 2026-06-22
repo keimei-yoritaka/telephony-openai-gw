@@ -53,7 +53,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
 
         if (count == 1 || count % LOG_EVERY_FRAMES == 0) {
             long deltaMillis = previous == 0L ? 0L : Duration.ofNanos(now - previous).toMillis();
-            LOG.log(System.Logger.Level.INFO,
+            LOG.log(System.Logger.Level.DEBUG,
                     "Observed inbound audio frame: sessionId={0}, callId={1}, frames={2}, bytes={3}, type={4}, deltaMs={5}, queueDepth={6}",
                     sessionId, callId, count, frame.getSize(), frame.getType(), deltaMillis,
                     audioBridge.inboundQueue().depth());
@@ -105,7 +105,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
 
         long count = outboundFrames.incrementAndGet();
         if (count == 1 || count % LOG_EVERY_FRAMES == 0) {
-            LOG.log(System.Logger.Level.INFO,
+            LOG.log(System.Logger.Level.DEBUG,
                     "Provided outbound RTP audio frame: sessionId={0}, callId={1}, frames={2}, silenceFrames={3}, bytes={4}, outboundDepth={5}",
                     sessionId, callId, count, outboundSilenceFrames.get(), payload.length,
                     audioBridge.outboundDepth(sessionId));

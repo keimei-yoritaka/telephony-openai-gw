@@ -39,7 +39,7 @@ public final class AudioQueue {
         }
 
         if (offered == 1 || offered % 250 == 0) {
-            LOG.log(System.Logger.Level.INFO,
+            LOG.log(System.Logger.Level.DEBUG,
                     "Audio queue accepted frame: queue={0}, offered={1}, dropped={2}, depth={3}",
                     name, offered, droppedFrames.get(), frames.size());
         }

@@ -329,6 +329,8 @@ sudo systemctl stop telephony-openai-gw
 
 RHELではsystemd/journaldでstdout/stderrを集約する。PJSIP nativeログとJavaアプリログは同じservice logに出るため、通常確認は`GW_EVENT`を抽出する。
 
+`logging.level: INFO`はデモ運用向けの既定値であり、RTP frame単位、audio queue受理、OpenAI input frame転送、PJSIP SIP message dumpなどの高頻度診断ログは出力しない。詳細調査時のみ`DEBUG`または`TRACE`へ変更する。
+
 会話本文の確認には`CALL_TRANSCRIPT`を抽出する。transcriptには通話内容が含まれるため、デモ環境で保存・共有する場合は、個人情報や顧客情報の扱いに注意する。
 
 長期運用では以下を検討する。

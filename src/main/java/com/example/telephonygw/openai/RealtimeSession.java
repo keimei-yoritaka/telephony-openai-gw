@@ -454,13 +454,9 @@ public final class RealtimeSession implements AutoCloseable {
                         long count = queuedOutputFrames.incrementAndGet();
                         currentResponseQueuedFrames++;
                         if (count == 1 || count % 250 == 0) {
-                            LOG.log(System.Logger.Level.INFO,
+                            LOG.log(System.Logger.Level.DEBUG,
                                     "Queued OpenAI output audio frame for RTP: sessionId={0}, frames={1}, outboundDepth={2}",
                                     callSessionId, count, audioBridge.outboundDepth(callSessionId));
-                            GatewayEventLogger.info(LOG, "rtp_outbound_audio_queued",
-                                    "sessionId", callSessionId,
-                                    "frames", count,
-                                    "outboundDepth", audioBridge.outboundDepth(callSessionId));
                         }
                     }
                 }

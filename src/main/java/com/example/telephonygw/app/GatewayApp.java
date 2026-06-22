@@ -32,7 +32,12 @@ public final class GatewayApp {
                 audioBridge);
         this.sessionManager.addCreateListener(realtimeClient::startSession);
         this.sessionManager.addCloseListener(realtimeClient::closeSession);
-        this.sipEndpoint = new PjsipEndpoint(config.sip(), config.registration(), sessionManager, audioBridge);
+        this.sipEndpoint = new PjsipEndpoint(
+                config.sip(),
+                config.registration(),
+                config.logging(),
+                sessionManager,
+                audioBridge);
     }
 
     public void start() {

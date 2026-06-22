@@ -198,12 +198,9 @@ public final class RealtimeClient implements AutoCloseable {
         if (session.appendInputAudio(frame)) {
             long count = forwardedFrames.incrementAndGet();
             if (count == 1 || count % 250 == 0) {
-                LOG.log(System.Logger.Level.INFO,
+                LOG.log(System.Logger.Level.DEBUG,
                         "Forwarded inbound audio frame to OpenAI Realtime: sessionId={0}, frames={1}",
                         frame.sessionId(), count);
-                GatewayEventLogger.info(LOG, "openai_inbound_audio_forwarded",
-                        "sessionId", frame.sessionId(),
-                        "frames", count);
             }
         } else {
             failedFrames.incrementAndGet();

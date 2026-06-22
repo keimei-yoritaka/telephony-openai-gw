@@ -1,6 +1,7 @@
 package com.example.telephonygw.sip;
 
 import com.example.telephonygw.config.GatewayConfig.RegistrationConfig;
+import com.example.telephonygw.config.GatewayConfig.LoggingConfig;
 import com.example.telephonygw.config.GatewayConfig.SipConfig;
 import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.session.CallSessionManager;
@@ -8,6 +9,7 @@ import com.example.telephonygw.session.CallSessionManager;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -17,6 +19,7 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
 
     private final SipConfig sipConfig;
     private final RegistrationConfig registrationConfig;
+    private final LoggingConfig loggingConfig;
     private final CallSessionManager sessionManager;
     private final AudioBridge audioBridge;
     private final AtomicBoolean started = new AtomicBoolean(false);
@@ -32,11 +35,13 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
     Pjsua2SipEndpoint(
             SipConfig sipConfig,
             RegistrationConfig registrationConfig,
+            LoggingConfig loggingConfig,
             CallSessionManager sessionManager,
             AudioBridge audioBridge
     ) {
         this.sipConfig = sipConfig;
         this.registrationConfig = registrationConfig;
+        this.loggingConfig = loggingConfig;
         this.sessionManager = sessionManager;
         this.audioBridge = audioBridge;
     }
@@ -50,7 +55,9 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         try {
             endpoint = newInstance("org.pjsip.pjsua2.Endpoint");
             invoke(endpoint, "libCreate");
-            invoke(endpoint, "libInit", newInstance("org.pjsip.pjsua2.EpConfig"));
+            Object epConfig = newInstance("org.pjsip.pjsua2.EpConfig");
+            configureNativeLogging(epConfig);
+            invoke(endpoint, "libInit", epConfig);
 
             Object transportConfig = newInstance("org.pjsip.pjsua2.TransportConfig");
             invoke(transportConfig, "setPort", (long) sipConfig.port());
@@ -198,6 +205,31 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
                     "Failed to update PJSUA2 account media public address from SIP Registration reflexive address {0}: {1}",
                     publicAddress, e.getMessage());
         }
+    }
+
+    private void configureNativeLogging(Object epConfig) throws ReflectiveOperationException {
+        Object logConfig = invoke(epConfig, "getLogConfig");
+        String level = loggingConfig.level().toUpperCase(Locale.ROOT);
+        long nativeLevel = switch (level) {
+            case "TRACE" -> 6L;
+            case "DEBUG" -> 5L;
+            case "INFO" -> 3L;
+            case "WARN", "WARNING" -> 2L;
+            case "ERROR" -> 1L;
+            default -> 3L;
+        };
+        long consoleLevel = switch (level) {
+            case "TRACE" -> 5L;
+            case "DEBUG" -> 4L;
+            case "INFO" -> 3L;
+            case "WARN", "WARNING" -> 2L;
+            case "ERROR" -> 1L;
+            default -> 3L;
+        };
+        long messageLogging = ("TRACE".equals(level) || "DEBUG".equals(level)) ? 1L : 0L;
+        invoke(logConfig, "setLevel", nativeLevel);
+        invoke(logConfig, "setConsoleLevel", consoleLevel);
+        invoke(logConfig, "setMsgLogging", messageLogging);
     }
 
     private Object newAccount() throws ReflectiveOperationException {

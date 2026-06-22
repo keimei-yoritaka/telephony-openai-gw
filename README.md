@@ -97,6 +97,8 @@ grep 'CALL_TRANSCRIPT' apl.log
 
 アプリケーション側のログレベルは`config/*.yaml`の`logging.level`で指定します。対応値は`TRACE`、`DEBUG`、`INFO`、`WARN`、`WARNING`、`ERROR`です。
 
+`INFO`はデモ運用向けの既定値です。通話開始/終了、Registration、OpenAI response、会話transcript、警告/エラーは出力しますが、RTP frame単位、audio queue受理、OpenAI input frame転送、PJSIP SIP message dumpなどの高頻度診断ログは出力しません。これらを確認する場合は`logging.level: DEBUG`または`TRACE`を指定します。
+
 ### stdout/stderr運用について
 
 現時点ではstdout/stderrへ出す構成を維持します。systemd、container、CIでは標準出力集約が扱いやすく、PJSIP nativeログも同じプロセスから出るため、まずは起動元でファイル化またはjournaldへ集約する方針が単純です。
