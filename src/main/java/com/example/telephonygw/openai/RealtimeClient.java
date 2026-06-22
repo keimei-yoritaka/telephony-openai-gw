@@ -6,6 +6,7 @@ import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.media.AudioFrame;
 import com.example.telephonygw.media.AudioQueue;
 
+import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,6 +31,7 @@ public final class RealtimeClient implements AutoCloseable {
     private final AtomicLong failedFrames = new AtomicLong();
     private final AtomicLong skippedFrames = new AtomicLong();
     private Thread forwardingThread;
+    private HttpClient httpClient;
 
     public RealtimeClient(
             OpenAiConfig config,
@@ -45,9 +47,11 @@ public final class RealtimeClient implements AutoCloseable {
 
     public void initialize() {
         if (initialized.compareAndSet(false, true)) {
+            httpClient = HttpClient.newHttpClient();
             LOG.log(System.Logger.Level.INFO,
                     "Initialized OpenAI Realtime client for model {0}",
                     config.realtimeModel());
+            warmUpAsync();
         }
     }
 
@@ -81,9 +85,47 @@ public final class RealtimeClient implements AutoCloseable {
                 config.inputTranscriptionModel(),
                 config.inputTranscriptionLanguage(),
                 systemInstructions,
-                audioBridge);
+                audioBridge,
+                httpClient);
         session.open();
         return session;
+    }
+
+    private void warmUpAsync() {
+        Thread warmup = new Thread(this::warmUp, "openai-realtime-warmup");
+        warmup.setDaemon(true);
+        warmup.start();
+    }
+
+    private void warmUp() {
+        String warmupSessionId = "warmup-" + Long.toUnsignedString(System.nanoTime());
+        try (RealtimeSession session = new RealtimeSession(
+                warmupSessionId,
+                config.apiKey(),
+                config.realtimeModel(),
+                config.voice(),
+                config.maxOutputTokens(),
+                config.turnDetectionType(),
+                config.turnDetectionEagerness(),
+                false,
+                config.inputTranscriptionModel(),
+                config.inputTranscriptionLanguage(),
+                systemInstructions,
+                audioBridge,
+                httpClient)) {
+            session.open();
+            LOG.log(System.Logger.Level.INFO,
+                    "Completed OpenAI Realtime warm-up: sessionId={0}",
+                    warmupSessionId);
+            GatewayEventLogger.info(LOG, "openai_realtime_warmup_completed",
+                    "sessionId", warmupSessionId);
+        } catch (RuntimeException e) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "OpenAI Realtime warm-up failed. First call may take longer: {0}",
+                    e.getMessage());
+            GatewayEventLogger.warning(LOG, "openai_realtime_warmup_failed",
+                    "error", e.getMessage());
+        }
     }
 
     public void startSession(String callSessionId, String reason) {
@@ -145,6 +187,7 @@ public final class RealtimeClient implements AutoCloseable {
         if (initialized.compareAndSet(true, false)) {
             stopForwarding();
             closeSessions();
+            httpClient = null;
             LOG.log(System.Logger.Level.INFO,
                     "Closed OpenAI Realtime client: forwardedFrames={0}, failedFrames={1}, skippedFrames={2}",
                     forwardedFrames.get(), failedFrames.get(), skippedFrames.get());

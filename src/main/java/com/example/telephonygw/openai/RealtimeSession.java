@@ -1,8 +1,8 @@
 package com.example.telephonygw.openai;
 
-import com.example.telephonygw.media.AudioFrame;
-import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.logging.GatewayEventLogger;
+import com.example.telephonygw.media.AudioBridge;
+import com.example.telephonygw.media.AudioFrame;
 
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
@@ -41,6 +41,8 @@ public final class RealtimeSession implements AutoCloseable {
     private final String inputTranscriptionLanguage;
     private final String systemInstructions;
     private final AudioBridge audioBridge;
+    private final HttpClient httpClient;
+    private final Object sendLock = new Object();
     private final AtomicBoolean open = new AtomicBoolean(false);
     private final AtomicLong sentFrames = new AtomicLong();
     private final AtomicLong sentBytes = new AtomicLong();
@@ -48,6 +50,7 @@ public final class RealtimeSession implements AutoCloseable {
     private final AtomicLong queuedOutputFrames = new AtomicLong();
     private final AtomicBoolean initialGreetingStarted = new AtomicBoolean(false);
     private final ByteArrayOutputStream pendingOutputPcm8 = new ByteArrayOutputStream();
+    private CompletableFuture<Void> sendChain = CompletableFuture.completedFuture(null);
     private volatile long lastFrameNanos;
     private volatile WebSocket webSocket;
 
@@ -63,7 +66,8 @@ public final class RealtimeSession implements AutoCloseable {
             String inputTranscriptionModel,
             String inputTranscriptionLanguage,
             String systemInstructions,
-            AudioBridge audioBridge
+            AudioBridge audioBridge,
+            HttpClient httpClient
     ) {
         this.callSessionId = Objects.requireNonNull(callSessionId, "callSessionId");
         this.apiKey = Objects.requireNonNull(apiKey, "apiKey");
@@ -77,6 +81,7 @@ public final class RealtimeSession implements AutoCloseable {
         this.inputTranscriptionLanguage = Objects.requireNonNull(inputTranscriptionLanguage, "inputTranscriptionLanguage");
         this.systemInstructions = Objects.requireNonNull(systemInstructions, "systemInstructions");
         this.audioBridge = Objects.requireNonNull(audioBridge, "audioBridge");
+        this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
     }
 
     public void open() {
@@ -85,8 +90,7 @@ public final class RealtimeSession implements AutoCloseable {
         }
 
         try {
-            webSocket = HttpClient.newHttpClient()
-                    .newWebSocketBuilder()
+            webSocket = httpClient.newWebSocketBuilder()
                     .header("Authorization", "Bearer " + apiKey)
                     .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
                     .buildAsync(sessionUri(), new SessionListener(callSessionId, audioBridge, pendingOutputPcm8,
@@ -188,8 +192,32 @@ public final class RealtimeSession implements AutoCloseable {
     }
 
     private void sendText(String payload) {
-        CompletableFuture<WebSocket> future = webSocket.sendText(payload, true);
-        future.orTimeout(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS).join();
+        WebSocket socket = webSocket;
+        if (socket == null) {
+            throw new IllegalStateException("OpenAI Realtime WebSocket is not connected");
+        }
+        synchronized (sendLock) {
+            CompletableFuture<Void> next = sendChain
+                    .exceptionally(error -> null)
+                    .thenCompose(ignored -> socket.sendText(payload, true))
+                    .orTimeout(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .thenAccept(ignored -> {
+                    });
+            sendChain = next.whenComplete((ignored, error) -> {
+                if (error != null && open.compareAndSet(true, false)) {
+                    LOG.log(System.Logger.Level.WARNING,
+                            "OpenAI Realtime send failed: sessionId={0}, error={1}",
+                            callSessionId, error.getMessage());
+                    GatewayEventLogger.warning(LOG, "openai_send_failed",
+                            "sessionId", callSessionId,
+                            "error", error.getMessage());
+                    WebSocket current = webSocket;
+                    if (current != null) {
+                        current.abort();
+                    }
+                }
+            });
+        }
     }
 
     private String sessionUpdateEvent() {
