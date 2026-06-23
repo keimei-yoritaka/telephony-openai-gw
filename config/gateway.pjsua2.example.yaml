@@ -4,7 +4,10 @@ sip:
   port: 5060
   transport: UDP
   ipVersion: IPv4
+  # codecは後方互換用。新規設定ではpreferredCodec/codecsを利用する。
   codec: PCMU
+  preferredCodec: G722
+  codecs: G722,PCMU
   # 空の場合、REGISTER応答のVia received/rportからNAT external側IPを自動検出する。
   # 自動検出を使わず固定したい場合は、router/NATのexternal側IPまたは名前を指定する。
   publicContactAddress: ""

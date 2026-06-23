@@ -3,7 +3,10 @@ package com.example.telephonygw.config;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public final class GatewayConfigLoader {
@@ -19,7 +22,10 @@ public final class GatewayConfigLoader {
                         intValue(values, "sip.port"),
                         value(values, "sip.transport"),
                         value(values, "sip.ipVersion"),
-                        value(values, "sip.codec"),
+                        optionalValue(values, "sip.codec", "PCMU").toUpperCase(Locale.ROOT),
+                        optionalValue(values, "sip.preferredCodec",
+                                optionalValue(values, "sip.codec", "PCMU")).toUpperCase(Locale.ROOT),
+                        listValue(values, "sip.codecs", optionalValue(values, "sip.codec", "PCMU")),
                         optionalValue(values, "sip.publicContactAddress"),
                         intValue(values, "sip.rtpPortStart", 40000),
                         intValue(values, "sip.rtpPortEnd", 41000)
@@ -153,6 +159,21 @@ public final class GatewayConfigLoader {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(key + " must be an integer", e);
         }
+    }
+
+    private static List<String> listValue(Map<String, String> values, String key, String defaultValue) {
+        String value = values.get(key);
+        if (value == null || value.isBlank()) {
+            value = defaultValue;
+        }
+        List<String> entries = new ArrayList<>();
+        for (String rawEntry : value.split(",")) {
+            String entry = rawEntry.trim();
+            if (!entry.isBlank()) {
+                entries.add(entry.toUpperCase(Locale.ROOT));
+            }
+        }
+        return List.copyOf(entries);
     }
 
     private static boolean booleanValue(Map<String, String> values, String key, boolean defaultValue) {

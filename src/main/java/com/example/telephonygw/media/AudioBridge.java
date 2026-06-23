@@ -17,6 +17,7 @@ public final class AudioBridge {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AudioQueue inboundQueue = new AudioQueue("inbound", DEFAULT_QUEUE_CAPACITY);
     private final Map<String, AudioQueue> outboundQueues = new ConcurrentHashMap<>();
+    private final Map<String, Integer> sessionSampleRates = new ConcurrentHashMap<>();
     private final Set<String> outboundCompleteSessions = ConcurrentHashMap.newKeySet();
     private final AtomicLong inboundSequence = new AtomicLong();
     private final AtomicLong outboundSequence = new AtomicLong();
@@ -58,6 +59,20 @@ public final class AudioBridge {
         return outboundQueue(sessionId).offer(frame);
     }
 
+    public void setSessionSampleRate(String sessionId, int sampleRateHz) {
+        sessionSampleRates.put(sessionId, sampleRateHz);
+        LOG.log(System.Logger.Level.INFO,
+                "Configured audio bridge session sample rate: sessionId={0}, sampleRateHz={1}",
+                sessionId, sampleRateHz);
+        GatewayEventLogger.info(LOG, "audio_bridge_session_sample_rate",
+                "sessionId", sessionId,
+                "sampleRateHz", sampleRateHz);
+    }
+
+    public int sessionSampleRate(String sessionId, int defaultSampleRateHz) {
+        return sessionSampleRates.getOrDefault(sessionId, defaultSampleRateHz);
+    }
+
     public AudioFrame pollOutbound(String sessionId) {
         AudioQueue queue = outboundQueues.get(sessionId);
         return queue == null ? null : queue.poll();
@@ -81,6 +96,10 @@ public final class AudioBridge {
         int depth = queue.depth();
         queue.clear();
         return depth;
+    }
+
+    public void clearSessionFormat(String sessionId) {
+        sessionSampleRates.remove(sessionId);
     }
 
     public void markOutboundActive(String sessionId) {
@@ -110,6 +129,7 @@ public final class AudioBridge {
                 outboundDepth += queue.depth();
                 queue.clear();
             }
+            sessionSampleRates.clear();
             LOG.log(System.Logger.Level.INFO,
                     "Stopped audio bridge: inboundOffered={0}, inboundDropped={1}, inboundDepth={2}, outboundOffered={3}, outboundDropped={4}, outboundDepth={5}",
                     inboundQueue.offeredFrames(), inboundQueue.droppedFrames(), inboundQueue.depth(),

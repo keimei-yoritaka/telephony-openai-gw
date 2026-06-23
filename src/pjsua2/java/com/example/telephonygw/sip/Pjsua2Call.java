@@ -10,6 +10,7 @@ import org.pjsip.pjsua2.CallInfo;
 import org.pjsip.pjsua2.CallMediaInfo;
 import org.pjsip.pjsua2.OnCallMediaStateParam;
 import org.pjsip.pjsua2.OnCallStateParam;
+import org.pjsip.pjsua2.StreamInfo;
 import org.pjsip.pjsua2.pjmedia_type;
 import org.pjsip.pjsua2.pjsip_inv_state;
 import org.pjsip.pjsua2.pjsua_call_media_status;
@@ -102,17 +103,54 @@ final class Pjsua2Call extends Call {
             return;
         }
 
+        MediaFormat format = mediaFormat(mediaIndex);
         callAudioMedia = getAudioMedia(mediaIndex);
-        audioBridgePort = new Pjsua2AudioBridgePort(sessionId, getId(), audioBridge);
+        audioBridgePort = new Pjsua2AudioBridgePort(sessionId, getId(), audioBridge, format.sampleRateHz());
         callAudioMedia.startTransmit(audioBridgePort);
         audioBridgePort.startTransmit(callAudioMedia);
         LOG.log(System.Logger.Level.INFO,
-                "Attached PJSUA2 audio bridge: callId={0}, sessionId={1}, mediaIndex={2}",
-                getId(), sessionId, mediaIndex);
+                "Attached PJSUA2 audio bridge: callId={0}, sessionId={1}, mediaIndex={2}, codec={3}, sampleRateHz={4}",
+                getId(), sessionId, mediaIndex, format.codecName(), format.sampleRateHz());
         GatewayEventLogger.info(LOG, "rtp_audio_bridge_attached",
                 "sessionId", sessionId,
                 "callId", getId(),
-                "mediaIndex", mediaIndex);
+                "mediaIndex", mediaIndex,
+                "codec", format.codecName(),
+                "sampleRateHz", format.sampleRateHz());
+    }
+
+    private MediaFormat mediaFormat(int mediaIndex) {
+        try {
+            StreamInfo streamInfo = getStreamInfo(mediaIndex);
+            String codecName = streamInfo.getCodecName();
+            int sampleRateHz = sampleRate(codecName, streamInfo.getCodecClockRate());
+            LOG.log(System.Logger.Level.INFO,
+                    "Detected negotiated SIP media format: callId={0}, mediaIndex={1}, codec={2}, codecClockRate={3}, bridgeSampleRateHz={4}",
+                    getId(), mediaIndex, codecName, streamInfo.getCodecClockRate(), sampleRateHz);
+            GatewayEventLogger.info(LOG, "sip_media_format",
+                    "sessionId", sessionId,
+                    "callId", getId(),
+                    "mediaIndex", mediaIndex,
+                    "codec", codecName,
+                    "codecClockRate", streamInfo.getCodecClockRate(),
+                    "sampleRateHz", sampleRateHz);
+            return new MediaFormat(codecName, sampleRateHz);
+        } catch (Exception e) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "Failed to detect negotiated media format. Falling back to 8000Hz PCM bridge: callId={0}, error={1}",
+                    getId(), e.getMessage());
+            return new MediaFormat("unknown", 8000);
+        }
+    }
+
+    private static int sampleRate(String codecName, long codecClockRate) {
+        if (codecName != null && codecName.equalsIgnoreCase("G722")) {
+            return 16000;
+        }
+        if (codecClockRate > 0L && codecClockRate <= Integer.MAX_VALUE) {
+            return (int) codecClockRate;
+        }
+        return 8000;
     }
 
     private void closeAudioBridge() {
@@ -164,5 +202,8 @@ final class Pjsua2Call extends Call {
                 && (message.contains("PJ_EINVAL")
                 || message.contains("Invalid value or argument")
                 || message.contains("pjsua_conf_disconnect"));
+    }
+
+    private record MediaFormat(String codecName, int sampleRateHz) {
     }
 }

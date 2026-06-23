@@ -28,6 +28,7 @@ public final class RealtimeClient implements AutoCloseable {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean forwarding = new AtomicBoolean(false);
     private final Map<String, RealtimeSession> sessions = new ConcurrentHashMap<>();
+    private final Map<String, Object> sessionLocks = new ConcurrentHashMap<>();
     private final Map<String, Long> retryNotBeforeNanos = new ConcurrentHashMap<>();
     private final AtomicLong forwardedFrames = new AtomicLong();
     private final AtomicLong failedFrames = new AtomicLong();
@@ -166,6 +167,7 @@ public final class RealtimeClient implements AutoCloseable {
 
     public void closeSession(String callSessionId, String reason) {
         RealtimeSession session = sessions.remove(callSessionId);
+        sessionLocks.remove(callSessionId);
         retryNotBeforeNanos.remove(callSessionId);
         int clearedFrames = audioBridge.clearOutbound(callSessionId);
         if (session != null) {
@@ -186,6 +188,7 @@ public final class RealtimeClient implements AutoCloseable {
                     "reason", reason,
                     "clearedOutboundFrames", clearedFrames);
         }
+        audioBridge.clearSessionFormat(callSessionId);
     }
 
     @Override
@@ -254,6 +257,7 @@ public final class RealtimeClient implements AutoCloseable {
         } else {
             failedFrames.incrementAndGet();
             sessions.remove(frame.sessionId(), session);
+            sessionLocks.remove(frame.sessionId());
             markSessionRetry(frame.sessionId(), null);
             session.close();
         }
@@ -264,14 +268,22 @@ public final class RealtimeClient implements AutoCloseable {
         if (existing != null) {
             return existing;
         }
-        RealtimeSession opened = openSession(sessionId);
-        RealtimeSession raced = sessions.putIfAbsent(sessionId, opened);
-        if (raced != null) {
-            opened.close();
-            return raced;
+        Object lock = sessionLocks.computeIfAbsent(sessionId, ignored -> new Object());
+        synchronized (lock) {
+            existing = sessions.get(sessionId);
+            if (existing != null) {
+                return existing;
+            }
+            try {
+                RealtimeSession opened = openSession(sessionId);
+                sessions.put(sessionId, opened);
+                retryNotBeforeNanos.remove(sessionId);
+                return opened;
+            } catch (RuntimeException e) {
+                sessionLocks.remove(sessionId, lock);
+                throw e;
+            }
         }
-        retryNotBeforeNanos.remove(sessionId);
-        return opened;
     }
 
     private boolean isRetryCoolingDown(String sessionId) {
@@ -330,6 +342,7 @@ public final class RealtimeClient implements AutoCloseable {
             if (session.isIdle(now, SESSION_IDLE_TIMEOUT)) {
                 if (sessions.remove(entry.getKey(), session)) {
                     session.close();
+                    sessionLocks.remove(entry.getKey());
                 }
             }
         }
@@ -340,6 +353,7 @@ public final class RealtimeClient implements AutoCloseable {
             session.close();
         }
         sessions.clear();
+        sessionLocks.clear();
         retryNotBeforeNanos.clear();
     }
 }

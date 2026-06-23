@@ -15,14 +15,14 @@ import java.util.concurrent.atomic.AtomicLong;
 final class Pjsua2AudioBridgePort extends AudioMediaPort {
     private static final System.Logger LOG = System.getLogger(Pjsua2AudioBridgePort.class.getName());
     private static final long LOG_EVERY_FRAMES = 50;
-    private static final int SAMPLE_RATE_HZ = 8000;
     private static final int FRAME_DURATION_MS = 20;
-    private static final int FRAME_BYTES = 320;
     private static final int OUTBOUND_START_BUFFER_FRAMES = 8;
 
     private final String sessionId;
     private final int callId;
     private final AudioBridge audioBridge;
+    private final int sampleRateHz;
+    private final int frameBytes;
     private final AtomicLong inboundFrames = new AtomicLong();
     private final AtomicLong outboundFrames = new AtomicLong();
     private final AtomicLong outboundSilenceFrames = new AtomicLong();
@@ -30,12 +30,15 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
     private volatile long firstFrameNanos;
     private volatile long previousFrameNanos;
 
-    Pjsua2AudioBridgePort(String sessionId, int callId, AudioBridge audioBridge) throws Exception {
+    Pjsua2AudioBridgePort(String sessionId, int callId, AudioBridge audioBridge, int sampleRateHz) throws Exception {
         super();
         this.sessionId = sessionId;
         this.callId = callId;
         this.audioBridge = audioBridge;
-        createPort(portName(sessionId, callId), mediaFormat());
+        this.sampleRateHz = sampleRateHz;
+        this.frameBytes = frameBytes(sampleRateHz);
+        createPort(portName(sessionId, callId), mediaFormat(sampleRateHz));
+        audioBridge.setSessionSampleRate(sessionId, sampleRateHz);
     }
 
     @Override
@@ -49,7 +52,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         long previous = previousFrameNanos;
         previousFrameNanos = now;
         byte[] payload = copyPayload(frame.getBuf(), (int) frame.getSize());
-        audioBridge.enqueueInboundPcm16(sessionId, payload, SAMPLE_RATE_HZ, FRAME_DURATION_MS);
+        audioBridge.enqueueInboundPcm16(sessionId, payload, sampleRateHz, FRAME_DURATION_MS);
 
         if (count == 1 || count % LOG_EVERY_FRAMES == 0) {
             long deltaMillis = previous == 0L ? 0L : Duration.ofNanos(now - previous).toMillis();
@@ -65,11 +68,11 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         int depthBeforePoll = audioBridge.outboundDepth(sessionId);
         boolean outboundComplete = audioBridge.isOutboundComplete(sessionId);
         if (!outboundPlaying && depthBeforePoll == 0) {
-            provideFrame(frame, new byte[FRAME_BYTES], true);
+            provideFrame(frame, new byte[frameBytes], true);
             return;
         }
         if (!outboundPlaying && depthBeforePoll < OUTBOUND_START_BUFFER_FRAMES && !outboundComplete) {
-            provideFrame(frame, new byte[FRAME_BYTES], true);
+            provideFrame(frame, new byte[frameBytes], true);
             return;
         }
 
@@ -87,7 +90,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             if (outboundComplete) {
                 audioBridge.clearOutboundComplete(sessionId);
             }
-            payload = new byte[FRAME_BYTES];
+            payload = new byte[frameBytes];
             provideFrame(frame, payload, true);
         } else {
             payload = normalizeFrame(outbound.payload());
@@ -132,10 +135,11 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         return Duration.ofNanos(System.nanoTime() - first).toMillis();
     }
 
-    private static MediaFormatAudio mediaFormat() {
+    private static MediaFormatAudio mediaFormat(int sampleRateHz) {
         MediaFormatAudio format = new MediaFormatAudio();
-        format.init(pjmedia_format_id.PJMEDIA_FORMAT_PCM, SAMPLE_RATE_HZ, 1,
-                FRAME_DURATION_MS * 1000, 16, 128000, 128000);
+        long bitsPerSecond = (long) sampleRateHz * 16;
+        format.init(pjmedia_format_id.PJMEDIA_FORMAT_PCM, sampleRateHz, 1,
+                FRAME_DURATION_MS * 1000, 16, bitsPerSecond, bitsPerSecond);
         return format;
     }
 
@@ -161,12 +165,16 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         return vector;
     }
 
-    private static byte[] normalizeFrame(byte[] payload) {
-        if (payload.length == FRAME_BYTES) {
+    private byte[] normalizeFrame(byte[] payload) {
+        if (payload.length == frameBytes) {
             return payload;
         }
-        byte[] normalized = new byte[FRAME_BYTES];
-        System.arraycopy(payload, 0, normalized, 0, Math.min(payload.length, FRAME_BYTES));
+        byte[] normalized = new byte[frameBytes];
+        System.arraycopy(payload, 0, normalized, 0, Math.min(payload.length, frameBytes));
         return normalized;
+    }
+
+    private static int frameBytes(int sampleRateHz) {
+        return sampleRateHz * FRAME_DURATION_MS / 1000 * 2;
     }
 }

@@ -9,7 +9,11 @@ import com.example.telephonygw.session.CallSessionManager;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -69,7 +73,8 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
             int udpTransport = staticInt("org.pjsip.pjsua2.pjsip_transport_type_e", "PJSIP_TRANSPORT_UDP");
             transportId = (Integer) invoke(endpoint, "transportCreate", udpTransport, transportConfig);
             invoke(endpoint, "libStart");
-            preferPcmuCodec();
+            logAvailableCodecs();
+            configureCodecPolicy();
             startEventLoop();
 
             LOG.log(System.Logger.Level.INFO,
@@ -274,33 +279,91 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         return detected == null ? "" : detected;
     }
 
-    private void preferPcmuCodec() {
+    private void configureCodecPolicy() {
         try {
             Object codecs = invoke(endpoint, "codecEnum2");
-            int enabled = 0;
+            Map<String, Short> enabledCodecs = codecPriorityByPrefix();
             int disabled = 0;
             int codecCount = (Integer) invoke(codecs, "size");
             for (int i = 0; i < codecCount; i++) {
                 Object codec = invoke(codecs, "get", i);
                 String codecId = (String) invoke(codec, "getCodecId");
-                if (codecId.startsWith("PCMU/8000")) {
-                    invoke(endpoint, "codecSetPriority", codecId, (short) 255);
-                    enabled++;
-                } else {
+                Short priority = priorityForCodec(codecId, enabledCodecs);
+                if (priority == null) {
                     invoke(endpoint, "codecSetPriority", codecId, (short) 0);
                     disabled++;
+                } else {
+                    invoke(endpoint, "codecSetPriority", codecId, priority);
                 }
             }
-            if (enabled == 0) {
-                invoke(endpoint, "codecSetPriority", "PCMU/8000", (short) 255);
-                enabled = 1;
+            for (Map.Entry<String, Short> entry : enabledCodecs.entrySet()) {
+                invoke(endpoint, "codecSetPriority", entry.getKey(), entry.getValue());
             }
             LOG.log(System.Logger.Level.INFO,
-                    "Configured PJSUA2 codec policy: PCMU enabled={0}, other codecs disabled={1}",
-                    enabled, disabled);
+                    "Configured PJSUA2 codec policy: preferredCodec={0}, enabledCodecs={1}, disabledCodecs={2}",
+                    sipConfig.preferredCodec(), enabledCodecs, disabled);
         } catch (ReflectiveOperationException | RuntimeException e) {
             LOG.log(System.Logger.Level.WARNING,
-                    "Failed to set PCMU codec priority. Continuing with PJSIP defaults: {0}",
+                    "Failed to set configured codec priority. Continuing with PJSIP defaults: {0}",
+                    e.getMessage());
+        }
+    }
+
+    private Map<String, Short> codecPriorityByPrefix() {
+        Map<String, Short> priorities = new LinkedHashMap<>();
+        short priority = 255;
+        priorities.put(codecPrefix(sipConfig.preferredCodec()), priority);
+        for (String codec : sipConfig.codecs()) {
+            String prefix = codecPrefix(codec);
+            if (!priorities.containsKey(prefix)) {
+                priority = (short) Math.max(1, priority - 16);
+                priorities.put(prefix, priority);
+            }
+        }
+        return priorities;
+    }
+
+    private static String codecPrefix(String codec) {
+        return switch (codec.toUpperCase(Locale.ROOT)) {
+            case "G722" -> "G722/16000";
+            case "PCMU" -> "PCMU/8000";
+            default -> throw new IllegalArgumentException("Unsupported codec: " + codec);
+        };
+    }
+
+    private static Short priorityForCodec(String codecId, Map<String, Short> priorities) {
+        for (Map.Entry<String, Short> entry : priorities.entrySet()) {
+            if (codecId.startsWith(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private void logAvailableCodecs() {
+        try {
+            Object codecs = invoke(endpoint, "codecEnum2");
+            int codecCount = (Integer) invoke(codecs, "size");
+            List<String> codecIds = new ArrayList<>();
+            boolean g722Available = false;
+            boolean pcmuAvailable = false;
+            for (int i = 0; i < codecCount; i++) {
+                Object codec = invoke(codecs, "get", i);
+                String codecId = (String) invoke(codec, "getCodecId");
+                codecIds.add(codecId);
+                if (codecId.startsWith("G722/")) {
+                    g722Available = true;
+                }
+                if (codecId.startsWith("PCMU/8000")) {
+                    pcmuAvailable = true;
+                }
+            }
+            LOG.log(System.Logger.Level.INFO,
+                    "Available PJSUA2 audio codecs: pcmuAvailable={0}, g722Available={1}, codecCount={2}, codecIds={3}",
+                    pcmuAvailable, g722Available, codecCount, String.join(",", codecIds));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            LOG.log(System.Logger.Level.WARNING,
+                    "Failed to enumerate PJSUA2 codecs: {0}",
                     e.getMessage());
         }
     }

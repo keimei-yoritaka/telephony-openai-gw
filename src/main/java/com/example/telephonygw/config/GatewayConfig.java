@@ -1,5 +1,9 @@
 package com.example.telephonygw.config;
 
+import com.example.telephonygw.media.CodecConfig;
+
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 public record GatewayConfig(
@@ -20,6 +24,8 @@ public record GatewayConfig(
             String transport,
             String ipVersion,
             String codec,
+            String preferredCodec,
+            List<String> codecs,
             String publicContactAddress,
             int rtpPortStart,
             int rtpPortEnd
@@ -33,7 +39,18 @@ public record GatewayConfig(
             requireRange("sip.port", port, 1, 65535);
             requireEquals("sip.transport", transport, "UDP");
             requireEquals("sip.ipVersion", ipVersion, "IPv4");
-            requireEquals("sip.codec", codec, "PCMU");
+            requireSupportedCodec("sip.codec", codec);
+            requireSupportedCodec("sip.preferredCodec", preferredCodec);
+            if (codecs == null || codecs.isEmpty()) {
+                throw new IllegalArgumentException("sip.codecs must include at least one codec");
+            }
+            for (String supportedCodec : codecs) {
+                requireSupportedCodec("sip.codecs", supportedCodec);
+            }
+            if (!codecs.contains(preferredCodec)) {
+                throw new IllegalArgumentException(
+                        "sip.preferredCodec must be included in sip.codecs: " + preferredCodec);
+            }
             requireRange("sip.rtpPortStart", rtpPortStart, 1024, 65534);
             requireRange("sip.rtpPortEnd", rtpPortEnd, 1024, 65534);
             requireEven("sip.rtpPortStart", rtpPortStart);
@@ -139,6 +156,14 @@ public record GatewayConfig(
         require(key, value);
         if (!expected.equalsIgnoreCase(value)) {
             throw new IllegalArgumentException(key + " must be " + expected + ": " + value);
+        }
+    }
+
+    private static void requireSupportedCodec(String key, String value) {
+        require(key, value);
+        String normalized = value.toUpperCase(Locale.ROOT);
+        if (!Set.of(CodecConfig.G722, CodecConfig.PCMU).contains(normalized)) {
+            throw new IllegalArgumentException(key + " must be G722 or PCMU: " + value);
         }
     }
 

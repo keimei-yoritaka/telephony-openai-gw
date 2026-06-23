@@ -74,7 +74,8 @@ final class PlaceholderSipEndpoint implements SipEndpointAdapter {
                 "Starting placeholder PJSIP endpoint on {0}:{1}/{2} {3}",
                 sipConfig.bindAddress(), sipConfig.port(), sipConfig.transport(), sipConfig.ipVersion());
         LOG.log(System.Logger.Level.INFO,
-                "Codec policy is fixed to {0}", sipConfig.codec());
+                "Codec policy configured: preferredCodec={0}, codecs={1}",
+                sipConfig.preferredCodec(), String.join(",", sipConfig.codecs()));
     }
 
     @Override
