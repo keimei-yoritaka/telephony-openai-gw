@@ -5,6 +5,7 @@ import com.example.telephonygw.logging.GatewayEventLogger;
 import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.media.AudioFrame;
 import com.example.telephonygw.media.AudioQueue;
+import com.example.telephonygw.monitor.ConversationEventPublisher;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -23,6 +24,7 @@ public final class RealtimeClient implements AutoCloseable {
     private final String systemInstructions;
     private final String initialGreeting;
     private final AudioBridge audioBridge;
+    private final ConversationEventPublisher conversationEventPublisher;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean forwarding = new AtomicBoolean(false);
     private final Map<String, RealtimeSession> sessions = new ConcurrentHashMap<>();
@@ -37,12 +39,14 @@ public final class RealtimeClient implements AutoCloseable {
             OpenAiConfig config,
             String systemInstructions,
             String initialGreeting,
-            AudioBridge audioBridge
+            AudioBridge audioBridge,
+            ConversationEventPublisher conversationEventPublisher
     ) {
         this.config = config;
         this.systemInstructions = systemInstructions;
         this.initialGreeting = initialGreeting;
         this.audioBridge = audioBridge;
+        this.conversationEventPublisher = conversationEventPublisher;
     }
 
     public void initialize() {
@@ -86,6 +90,7 @@ public final class RealtimeClient implements AutoCloseable {
                 config.inputTranscriptionLanguage(),
                 systemInstructions,
                 audioBridge,
+                conversationEventPublisher,
                 httpClient);
         session.open();
         return session;
@@ -112,6 +117,7 @@ public final class RealtimeClient implements AutoCloseable {
                 config.inputTranscriptionLanguage(),
                 systemInstructions,
                 audioBridge,
+                ConversationEventPublisher.NOOP,
                 httpClient)) {
             session.open();
             LOG.log(System.Logger.Level.INFO,

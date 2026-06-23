@@ -3,6 +3,7 @@ package com.example.telephonygw.openai;
 import com.example.telephonygw.logging.GatewayEventLogger;
 import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.media.AudioFrame;
+import com.example.telephonygw.monitor.ConversationEventPublisher;
 
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
@@ -41,6 +42,7 @@ public final class RealtimeSession implements AutoCloseable {
     private final String inputTranscriptionLanguage;
     private final String systemInstructions;
     private final AudioBridge audioBridge;
+    private final ConversationEventPublisher conversationEventPublisher;
     private final HttpClient httpClient;
     private final Object sendLock = new Object();
     private final AtomicBoolean open = new AtomicBoolean(false);
@@ -67,6 +69,7 @@ public final class RealtimeSession implements AutoCloseable {
             String inputTranscriptionLanguage,
             String systemInstructions,
             AudioBridge audioBridge,
+            ConversationEventPublisher conversationEventPublisher,
             HttpClient httpClient
     ) {
         this.callSessionId = Objects.requireNonNull(callSessionId, "callSessionId");
@@ -81,6 +84,8 @@ public final class RealtimeSession implements AutoCloseable {
         this.inputTranscriptionLanguage = Objects.requireNonNull(inputTranscriptionLanguage, "inputTranscriptionLanguage");
         this.systemInstructions = Objects.requireNonNull(systemInstructions, "systemInstructions");
         this.audioBridge = Objects.requireNonNull(audioBridge, "audioBridge");
+        this.conversationEventPublisher = Objects.requireNonNull(
+                conversationEventPublisher, "conversationEventPublisher");
         this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
     }
 
@@ -94,7 +99,7 @@ public final class RealtimeSession implements AutoCloseable {
                     .header("Authorization", "Bearer " + apiKey)
                     .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
                     .buildAsync(sessionUri(), new SessionListener(callSessionId, audioBridge, pendingOutputPcm8,
-                            receivedOutputChunks, queuedOutputFrames))
+                            receivedOutputChunks, queuedOutputFrames, conversationEventPublisher))
                     .get(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             sendText(sessionUpdateEvent());
             LOG.log(System.Logger.Level.INFO,
@@ -283,6 +288,7 @@ public final class RealtimeSession implements AutoCloseable {
         private final ByteArrayOutputStream pendingOutputPcm8;
         private final AtomicLong receivedOutputChunks;
         private final AtomicLong queuedOutputFrames;
+        private final ConversationEventPublisher conversationEventPublisher;
         private final AtomicBoolean responseActive = new AtomicBoolean(false);
         private final StringBuilder message = new StringBuilder();
         private long speechStartedNanos;
@@ -300,13 +306,15 @@ public final class RealtimeSession implements AutoCloseable {
                 AudioBridge audioBridge,
                 ByteArrayOutputStream pendingOutputPcm8,
                 AtomicLong receivedOutputChunks,
-                AtomicLong queuedOutputFrames
+                AtomicLong queuedOutputFrames,
+                ConversationEventPublisher conversationEventPublisher
         ) {
             this.callSessionId = callSessionId;
             this.audioBridge = audioBridge;
             this.pendingOutputPcm8 = pendingOutputPcm8;
             this.receivedOutputChunks = receivedOutputChunks;
             this.queuedOutputFrames = queuedOutputFrames;
+            this.conversationEventPublisher = conversationEventPublisher;
         }
 
         @Override
@@ -586,6 +594,7 @@ public final class RealtimeSession implements AutoCloseable {
             LOG.log(System.Logger.Level.INFO,
                     "CALL_TRANSCRIPT sessionId={0} speaker={1} itemId={2} responseId={3} text=\"{4}\"",
                     callSessionId, speaker, itemId, responseId, escapeLogText(text));
+            conversationEventPublisher.publishTranscript(callSessionId, speaker, itemId, responseId, text);
             GatewayEventLogger.info(LOG, "call_transcript_logged",
                     "sessionId", callSessionId,
                     "speaker", speaker,

@@ -47,7 +47,13 @@ public final class GatewayConfigLoader {
                         value(values, "bot.systemInstructions"),
                         optionalValue(values, "bot.initialGreeting", "こちらはAI電話受付です。ご用件をお話しください。")
                 ),
-                new GatewayConfig.LoggingConfig(value(values, "logging.level"))
+                new GatewayConfig.LoggingConfig(value(values, "logging.level")),
+                new GatewayConfig.MonitorConfig(
+                        booleanValue(values, "monitor.enabled", false),
+                        optionalValue(values, "monitor.bindAddress", "127.0.0.1"),
+                        intValue(values, "monitor.port", 8080),
+                        intValue(values, "monitor.maxEvents", 500)
+                )
         );
         config.validate();
         return config;

@@ -3,6 +3,8 @@ package com.example.telephonygw.app;
 import com.example.telephonygw.config.GatewayConfig;
 import com.example.telephonygw.logging.GatewayEventLogger;
 import com.example.telephonygw.media.AudioBridge;
+import com.example.telephonygw.monitor.ConversationEventHub;
+import com.example.telephonygw.monitor.ConversationMonitorServer;
 import com.example.telephonygw.openai.RealtimeClient;
 import com.example.telephonygw.session.CallSessionManager;
 import com.example.telephonygw.sip.PjsipEndpoint;
@@ -18,6 +20,8 @@ public final class GatewayApp {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final CallSessionManager sessionManager;
     private final AudioBridge audioBridge;
+    private final ConversationEventHub conversationEventHub;
+    private final ConversationMonitorServer conversationMonitorServer;
     private final RealtimeClient realtimeClient;
     private final PjsipEndpoint sipEndpoint;
 
@@ -25,11 +29,14 @@ public final class GatewayApp {
         this.config = config;
         this.sessionManager = new CallSessionManager();
         this.audioBridge = new AudioBridge();
+        this.conversationEventHub = new ConversationEventHub(config.monitor().maxEvents());
+        this.conversationMonitorServer = new ConversationMonitorServer(config.monitor(), conversationEventHub);
         this.realtimeClient = new RealtimeClient(
                 config.openAi(),
                 config.bot().systemInstructions(),
                 config.bot().initialGreeting(),
-                audioBridge);
+                audioBridge,
+                conversationEventHub);
         this.sessionManager.addCreateListener(realtimeClient::startSession);
         this.sessionManager.addCloseListener(realtimeClient::closeSession);
         this.sipEndpoint = new PjsipEndpoint(
@@ -56,6 +63,7 @@ public final class GatewayApp {
         LOG.log(System.Logger.Level.INFO, "Configured SIP endpoint {0}:{1}/{2}",
                 config.sip().bindAddress(), config.sip().port(), config.sip().transport());
 
+        conversationMonitorServer.start();
         realtimeClient.initialize();
         audioBridge.initialize();
         realtimeClient.startAudioForwarding(audioBridge.inboundQueue());
@@ -74,6 +82,7 @@ public final class GatewayApp {
         LOG.log(System.Logger.Level.INFO, "Stopping Telephony OpenAI Gateway");
         GatewayEventLogger.info(LOG, "gateway_stopping");
         sipEndpoint.stop();
+        conversationMonitorServer.close();
         realtimeClient.close();
         audioBridge.stop();
         sessionManager.closeAll("gateway_shutdown");

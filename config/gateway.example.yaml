@@ -37,3 +37,9 @@ bot:
 
 logging:
   level: INFO
+
+monitor:
+  enabled: true
+  bindAddress: 127.0.0.1
+  port: 8080
+  maxEvents: 500

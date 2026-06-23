@@ -7,7 +7,8 @@ public record GatewayConfig(
         RegistrationConfig registration,
         OpenAiConfig openAi,
         BotConfig bot,
-        LoggingConfig logging
+        LoggingConfig logging,
+        MonitorConfig monitor
 ) {
     private static final Set<String> SUPPORTED_REALTIME_VOICES = Set.of(
             "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar");
@@ -111,12 +112,21 @@ public record GatewayConfig(
         }
     }
 
+    public record MonitorConfig(boolean enabled, String bindAddress, int port, int maxEvents) {
+        public void validate() {
+            require("monitor.bindAddress", bindAddress);
+            requireRange("monitor.port", port, 1, 65535);
+            requireRange("monitor.maxEvents", maxEvents, 1, 10000);
+        }
+    }
+
     public void validate() {
         sip.validate();
         registration.validate();
         openAi.validate();
         bot.validate();
         logging.validate();
+        monitor.validate();
     }
 
     private static void require(String key, String value) {

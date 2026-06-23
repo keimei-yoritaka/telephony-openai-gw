@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telephony OpenAI Gateway Monitor</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>Telephony OpenAI Gateway</h1>
+        <p id="session-label" class="session-label">session: -</p>
+      </div>
+      <div id="connection-state" class="connection-state" data-state="connecting">connecting</div>
+    </header>
+
+    <section id="timeline" class="timeline" aria-live="polite"></section>
+  </main>
+
+  <template id="message-template">
+    <article class="message">
+      <div class="bubble">
+        <p class="text"></p>
+        <time class="timestamp"></time>
+      </div>
+    </article>
+  </template>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

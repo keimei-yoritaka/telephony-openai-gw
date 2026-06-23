@@ -100,6 +100,16 @@ grep 'CALL_TRANSCRIPT' apl.log
 
 `INFO`はデモ運用向けの既定値です。通話開始/終了、Registration、OpenAI response、会話transcript、警告/エラーは出力しますが、RTP frame単位、audio queue受理、OpenAI input frame転送、PJSIP SIP message dumpなどの高頻度診断ログは出力しません。これらを確認する場合は`logging.level: DEBUG`または`TRACE`を指定します。
 
+## 会話モニターUI
+
+`monitor.enabled: true`の場合、ブラウザから会話モニターを確認できます。
+
+```sh
+open http://127.0.0.1:8080/
+```
+
+RHEL EC2で外部ブラウザから確認する場合は、`monitor.bindAddress: 0.0.0.0`を指定し、security groupで接続元IPを制限してください。認証なしのデモ機能のため、広く公開しないでください。
+
 ### stdout/stderr運用について
 
 現時点ではstdout/stderrへ出す構成を維持します。systemd、container、CIでは標準出力集約が扱いやすく、PJSIP nativeログも同じプロセスから出るため、まずは起動元でファイル化またはjournaldへ集約する方針が単純です。
@@ -112,4 +122,5 @@ grep 'CALL_TRANSCRIPT' apl.log
 - [デプロイメントガイド](docs/deployment-guide.md)
 - [PJSUA2 Java Binding 調査メモ](docs/pjsua2-java-notes.md)
 - [RTP / OpenAI 音声ブリッジ実装計画](docs/rtp-media-bridge-implementation-plan.md)
+- [会話モニターUI 要件・設計メモ](docs/conversation-monitor-requirements-and-design.md)
 - [Agent向け指示](AGENTS.md)
