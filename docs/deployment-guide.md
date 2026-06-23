@@ -15,6 +15,7 @@ Repositoryに含めるモジュール:
 
 - Java source: `src/main/java/`
 - PJSUA2連携source: `src/pjsua2/java/`
+- ブラウザUI resource: `src/main/resources/`
 - 設定例: `config/*.example.yaml`
 - 起動・確認script: `scripts/`
 - systemd unit例: `deploy/systemd/`
@@ -106,6 +107,7 @@ grep 'GW_EVENT' apl.log
 - SIP registrarへUDP 5060で到達できる
 - RTP用UDP 40000-41000を必要範囲で送受信できる。RTCP用にRTP port + 1も使うため、firewall/NATでは41001まで許可する。
 - EC2 Security Groupで、SIP用UDP 5060およびRTP/RTCP用UDP 40000-41001のInboundを必要な送信元から許可する。
+- 会話モニターUIを外部ブラウザから確認する場合のみ、TCP 8080を必要な送信元IPから許可する。認証なしのデモ機能のため、`0.0.0.0/0`へ公開しない。
 
 ### サーバへ配置する資材
 
@@ -261,6 +263,16 @@ sudo chmod 640 /etc/telephony-openai-gw/gateway.yaml
 
 `gateway.yaml`では、SIP domain、user、registrar、bot設定、OpenAI model/voiceを実環境値へ変更する。SIP passwordやOpenAI API keyは直接commitしない。
 
+会話モニターUIを有効にする場合は、`gateway.yaml`に以下を設定する。同一サーバ上のブラウザやSSH port forwardingで確認する場合は`127.0.0.1`のままでよい。EC2外部のブラウザから直接確認する場合は`0.0.0.0`へ変更し、Security Groupで接続元IPを限定する。
+
+```yaml
+monitor:
+  enabled: true
+  bindAddress: 127.0.0.1
+  port: 8080
+  maxEvents: 500
+```
+
 secretは`/etc/sysconfig/telephony-openai-gw`に配置する。
 
 ```sh
@@ -279,6 +291,13 @@ EC2 Security GroupでSIP/RTPのInboundを許可したうえで、OS側firewalld�
 ```sh
 sudo firewall-cmd --permanent --add-port=5060/udp
 sudo firewall-cmd --permanent --add-port=40000-41001/udp
+sudo firewall-cmd --reload
+```
+
+会話モニターUIを外部ブラウザから直接確認する場合のみ、TCP 8080も許可する。認証なしのため、EC2 Security Group側で接続元IPを必ず限定する。
+
+```sh
+sudo firewall-cmd --permanent --add-port=8080/tcp
 sudo firewall-cmd --reload
 ```
 
@@ -307,6 +326,21 @@ sudo journalctl -u telephony-openai-gw | grep 'GW_EVENT'
 sudo journalctl -u telephony-openai-gw | grep 'CALL_TRANSCRIPT'
 ```
 
+会話モニターUIを有効化している場合、サーバ上では以下でHTTP応答を確認する。
+
+```sh
+curl http://127.0.0.1:8080/api/sessions/latest
+curl http://127.0.0.1:8080/
+```
+
+手元PCのブラウザからSSH port forwardingで確認する場合:
+
+```sh
+ssh -L 8080:127.0.0.1:8080 ec2-user@replace-with-ec2-public-host
+```
+
+その後、手元PCのブラウザで`http://127.0.0.1:8080/`を開く。
+
 停止:
 
 ```sh
@@ -325,6 +359,7 @@ sudo systemctl stop telephony-openai-gw
 8. `audio_queue_frame_dropped`が頻発しない。
 9. 会話内容確認が必要な場合、`CALL_TRANSCRIPT speaker=caller`と`CALL_TRANSCRIPT speaker=assistant`が出る。
 10. OpenAI応答遅延を見る場合、`openai_response_latency commitToFirstAudioMs=...`を確認する。初回挨拶などユーザー音声commitがない応答では`-1`になる。
+11. 会話モニターUIを有効化している場合、ブラウザ上で発信者発話が右側、AI応答が左側のバブルとして表示される。
 
 ## stdout/stderrとログ保管
 
