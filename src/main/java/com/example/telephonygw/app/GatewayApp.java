@@ -37,6 +37,7 @@ public final class GatewayApp {
                 config.sessions());
         this.realtimeClient = new RealtimeClient(
                 config.sessions(),
+                config.openAi(),
                 audioBridge,
                 conversationEventHub);
         this.sessionManager.addCreateListener(realtimeClient::startSession);

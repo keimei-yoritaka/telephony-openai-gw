@@ -25,6 +25,9 @@ public final class GatewayConfigLoader {
                         intValue(values, "media.inboundQueueCapacity", 500),
                         intValue(values, "media.outboundQueueCapacity", 10000)
                 ),
+                new GatewayConfig.OpenAiRuntimeConfig(
+                        booleanValue(values, "openai.cancelResponseOnUserSpeech", false)
+                ),
                 new GatewayConfig.LoggingConfig(value(values, "logging.level")),
                 new GatewayConfig.MonitorConfig(
                         booleanValue(values, "monitor.enabled", false),

@@ -269,6 +269,13 @@ sudo chmod 640 /etc/telephony-openai-gw/gateway.yaml
 
 会話モニターUIを有効にする場合は、`gateway.yaml`に以下を設定する。同一サーバ上のブラウザやSSH port forwardingで確認する場合は`127.0.0.1`のままでよい。EC2外部のブラウザから直接確認する場合は`0.0.0.0`へ変更し、Security Groupで接続元IPを限定する。
 
+AI音声の送話中に発信者の発話開始を検知した時点でAI音声をキャンセルしたい場合は、以下を有効化する。短い相づちや環境音でもAI音声が止まる可能性があるため、デモシナリオに合わせて判断する。
+
+```yaml
+openai:
+  cancelResponseOnUserSpeech: true
+```
+
 ```yaml
 monitor:
   enabled: true

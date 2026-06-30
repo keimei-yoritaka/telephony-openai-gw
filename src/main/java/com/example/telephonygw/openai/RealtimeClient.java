@@ -1,6 +1,7 @@
 package com.example.telephonygw.openai;
 
 import com.example.telephonygw.config.GatewayConfig.OpenAiConfig;
+import com.example.telephonygw.config.GatewayConfig.OpenAiRuntimeConfig;
 import com.example.telephonygw.config.GatewayConfig.BotConfig;
 import com.example.telephonygw.config.GatewayConfig.SessionSlotConfig;
 import com.example.telephonygw.logging.GatewayEventLogger;
@@ -24,6 +25,7 @@ public final class RealtimeClient implements AutoCloseable {
     private static final Duration SESSION_RETRY_DELAY = Duration.ofSeconds(15);
 
     private final Map<String, SessionRuntimeConfig> slotConfigs;
+    private final OpenAiRuntimeConfig runtimeConfig;
     private final Map<String, SessionRuntimeConfig> sessionConfigs = new ConcurrentHashMap<>();
     private final AudioBridge audioBridge;
     private final ConversationEventPublisher conversationEventPublisher;
@@ -40,10 +42,12 @@ public final class RealtimeClient implements AutoCloseable {
 
     public RealtimeClient(
             List<SessionSlotConfig> sessionSlots,
+            OpenAiRuntimeConfig runtimeConfig,
             AudioBridge audioBridge,
             ConversationEventPublisher conversationEventPublisher
     ) {
         this.slotConfigs = slotConfigs(sessionSlots);
+        this.runtimeConfig = runtimeConfig;
         this.audioBridge = audioBridge;
         this.conversationEventPublisher = conversationEventPublisher;
     }
@@ -89,6 +93,7 @@ public final class RealtimeClient implements AutoCloseable {
                 config.inputTranscriptionModel(),
                 config.inputTranscriptionLanguage(),
                 botConfig.systemInstructions(),
+                this.runtimeConfig.cancelResponseOnUserSpeech(),
                 audioBridge,
                 conversationEventPublisher,
                 httpClient);
@@ -127,6 +132,7 @@ public final class RealtimeClient implements AutoCloseable {
                 config.inputTranscriptionModel(),
                 config.inputTranscriptionLanguage(),
                 botConfig.systemInstructions(),
+                this.runtimeConfig.cancelResponseOnUserSpeech(),
                 audioBridge,
                 ConversationEventPublisher.NOOP,
                 httpClient)) {

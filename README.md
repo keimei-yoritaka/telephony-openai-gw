@@ -111,6 +111,12 @@ grep 'CALL_TRANSCRIPT' apl.log
 
 `INFO`はデモ運用向けの既定値です。通話開始/終了、Registration、OpenAI response、会話transcript、警告/エラーは出力しますが、RTP frame単位、audio queue受理、OpenAI input frame転送、PJSIP SIP message dumpなどの高頻度診断ログは出力しません。これらを確認する場合は`logging.level: DEBUG`または`TRACE`を指定します。
 
+## OpenAI応答中の割り込み
+
+`openai.cancelResponseOnUserSpeech: true`を指定すると、アプリがAI音声を送話中でも、発信者側の発話開始をOpenAI Realtime APIが検知した時点でAI音声の送出をキャンセルします。キャンセル時はRTP送信用のOutbound audio queueをクリアし、OpenAIへ`response.cancel`を送信します。
+
+デフォルト値は`false`です。短い相づちや環境音でAI音声が止まりやすくなる副作用があるため、デモ内容に合わせて有効化してください。
+
 ## 会話モニターUI
 
 `monitor.enabled: true`の場合、ブラウザから会話モニターを確認できます。

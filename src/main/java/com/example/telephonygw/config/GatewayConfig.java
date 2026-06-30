@@ -9,6 +9,7 @@ import java.util.Set;
 public record GatewayConfig(
         List<SessionSlotConfig> sessions,
         MediaConfig media,
+        OpenAiRuntimeConfig openAi,
         LoggingConfig logging,
         MonitorConfig monitor
 ) {
@@ -169,6 +170,11 @@ public record GatewayConfig(
         }
     }
 
+    public record OpenAiRuntimeConfig(boolean cancelResponseOnUserSpeech) {
+        public void validate() {
+        }
+    }
+
     public record MonitorConfig(boolean enabled, String bindAddress, int port, int maxEvents, int sessionHistoryDepth) {
         public void validate() {
             require("monitor.bindAddress", bindAddress);
@@ -200,6 +206,7 @@ public record GatewayConfig(
             }
         }
         media.validate();
+        openAi.validate();
         logging.validate();
         monitor.validate();
     }

@@ -156,6 +156,9 @@ session.session-2:
 logging:
   level: INFO
 
+openai:
+  cancelResponseOnUserSpeech: false
+
 monitor:
   enabled: true
   bindAddress: 127.0.0.1

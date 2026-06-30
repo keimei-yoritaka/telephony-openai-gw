@@ -241,6 +241,9 @@ media:
   inboundQueueCapacity: 500
   outboundQueueCapacity: 10000
 
+openai:
+  cancelResponseOnUserSpeech: false
+
 monitor:
   enabled: true
   bindAddress: 127.0.0.1
