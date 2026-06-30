@@ -31,6 +31,7 @@ public final class ConversationMonitorServer implements AutoCloseable {
     private static final long SSE_KEEPALIVE_SECONDS = 15L;
     private static final String MONITOR_RESOURCE_ROOT = "monitor/";
     private static final Path MONITOR_SOURCE_ROOT = Path.of("src/main/resources/monitor");
+    private static final Path RESOURCE_SOURCE_ROOT = Path.of("resources");
 
     private final MonitorConfig config;
     private final ConversationEventHub eventHub;
@@ -90,6 +91,7 @@ public final class ConversationMonitorServer implements AutoCloseable {
         String path = exchange.getRequestURI().getPath();
         switch (path) {
             case "/", "/index.html" -> sendAsset(exchange, "index.html", "text/html; charset=utf-8");
+            case "/fabicon.ico", "/favicon.ico" -> sendAsset(exchange, "fabicon.ico", "image/x-icon");
             case "/assets/app.css" -> sendAsset(exchange, "app.css", "text/css; charset=utf-8");
             case "/assets/app.js" -> sendAsset(exchange, "app.js", "application/javascript; charset=utf-8");
             default -> sendText(exchange, 404, "Not Found\n", "text/plain; charset=utf-8");
@@ -224,6 +226,10 @@ public final class ConversationMonitorServer implements AutoCloseable {
             }
         }
         Path sourcePath = MONITOR_SOURCE_ROOT.resolve(resourceName).normalize();
+        if (Files.isRegularFile(sourcePath)) {
+            return Files.readAllBytes(sourcePath);
+        }
+        sourcePath = RESOURCE_SOURCE_ROOT.resolve(resourceName).normalize();
         if (Files.isRegularFile(sourcePath)) {
             return Files.readAllBytes(sourcePath);
         }
