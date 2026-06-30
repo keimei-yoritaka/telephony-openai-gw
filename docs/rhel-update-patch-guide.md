@@ -256,16 +256,22 @@ monitor:
 
 ## RHEL上でのbuildと確認
 
-source更新後は、Java compileだけでなく、PJSIP/PJSUA2 Java bindingの存在確認も行う。
+source更新後は、まず設定ファイルを確認し、その後PJSIP/PJSUA2 Java bindingをbuildする。`check-pjsua2-java.sh`はbuild成果物である`libpjsua2.so`と`test.class`を確認・実行するscriptなので、`build-pjsip-rhel.sh`の後に実行する。
 
 ```sh
 cd /opt/telephony-openai-gw
 sudo -u telephonygw scripts/check-config.sh config/gateway.local.yaml
-sudo -u telephonygw scripts/check-pjsua2-java.sh
 sudo -u telephonygw scripts/build-pjsip-rhel.sh
+sudo -u telephonygw scripts/check-pjsua2-java.sh
 ```
 
 `build-pjsip-rhel.sh`は既存の`.deps/pjproject`がある場合、差分buildになる。archive差し替え方式で`.deps`を失った場合、またはPJSIP bindingに不整合がある場合は再buildされる。
+
+`check-pjsua2-java.sh`で以下のエラーが出る場合は、PJSIP buildが未実行、失敗、またはarchive差し替えで`.deps`が失われている状態である。先に`sudo -u telephonygw scripts/build-pjsip-rhel.sh`を実行する。
+
+```text
+PJSUA2 Java test.classが見つかりません。先に利用OS向けのPJSIP build scriptを実行してください。
+```
 
 Java compileを明示的に確認する場合:
 
