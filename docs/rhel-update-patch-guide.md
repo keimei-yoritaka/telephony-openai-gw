@@ -273,6 +273,15 @@ sudo -u telephonygw scripts/check-pjsua2-java.sh
 PJSUA2 Java binding classが見つかりません。先に利用OS向けのPJSIP build scriptを実行してください。
 ```
 
+`check-pjsua2-java.sh`で以下のOpenH264警告が出ても、最後に`PJSUA2 Java binding check completed.`が出ていれば確認成功として扱う。本Gatewayは音声のみを扱いvideo codecを使わないため、OpenH264 native libraryが無いことは問題ではない。
+
+```text
+Failed to load native library openh264
+java.lang.UnsatisfiedLinkError: no openh264 in java.library.path: ...
+This could be safely ignored if you don't use OpenH264 video codec.
+PJSUA2 Java binding check completed.
+```
+
 Java compileを明示的に確認する場合:
 
 ```sh

@@ -83,6 +83,8 @@ scripts/check-pjsua2-java.sh
 scripts/run-pjsua2-startup-check.sh config/gateway.pjsua2.example.yaml
 ```
 
+`scripts/check-pjsua2-java.sh`実行時にOpenH264 native libraryが見つからない警告が出ても、最後に`PJSUA2 Java binding check completed.`が出ていれば確認成功として扱う。本Gatewayは音声のみを扱いvideo codecを使わないため、OpenH264警告は無害である。
+
 実SIP環境で待ち受ける場合:
 
 ```sh
