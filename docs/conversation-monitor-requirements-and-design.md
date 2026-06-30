@@ -171,6 +171,7 @@ monitor:
   bindAddress: 127.0.0.1
   port: 8080
   maxEvents: 500
+  sessionHistoryDepth: 10
 ```
 
 RHEL EC2で外部ブラウザから直接見る場合は、必要に応じて以下のように設定する。
@@ -181,9 +182,12 @@ monitor:
   bindAddress: 0.0.0.0
   port: 8080
   maxEvents: 500
+  sessionHistoryDepth: 10
 ```
 
 ただし認証なしのため、security groupでアクセス元IPを制限することを前提とする。
+
+`monitor.maxEvents`は会話イベント全体の保持数を制御する。`monitor.sessionHistoryDepth`はモニター画面右側のセッション選択リストに残す最近のセッション数を制御し、通話終了後もこの件数内であれば会話履歴を選択して確認できる。
 
 ## UI設計案
 

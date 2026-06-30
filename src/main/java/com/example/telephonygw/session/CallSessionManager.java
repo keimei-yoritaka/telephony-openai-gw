@@ -3,6 +3,7 @@ package com.example.telephonygw.session;
 import com.example.telephonygw.logging.GatewayEventLogger;
 
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -13,14 +14,24 @@ public final class CallSessionManager {
     private static final System.Logger LOG = System.getLogger(CallSessionManager.class.getName());
 
     private final Map<String, CallSession> sessions = new ConcurrentHashMap<>();
+    private final List<CallSession> recentSessions = new ArrayList<>();
+    private final int sessionHistoryDepth;
     private final CopyOnWriteArrayList<SessionCreateListener> createListeners = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<SessionCloseListener> closeListeners = new CopyOnWriteArrayList<>();
+
+    public CallSessionManager(int sessionHistoryDepth) {
+        if (sessionHistoryDepth < 1) {
+            throw new IllegalArgumentException("sessionHistoryDepth must be positive: " + sessionHistoryDepth);
+        }
+        this.sessionHistoryDepth = sessionHistoryDepth;
+    }
 
     public CallSession createSession(String slotId) {
         String id = UUID.randomUUID().toString();
         CallSession session = new CallSession(id, slotId);
         session.activate();
         sessions.put(id, session);
+        rememberSession(session);
         LOG.log(System.Logger.Level.INFO, "Created call session {0}: slotId={1}", id, slotId);
         GatewayEventLogger.info(LOG, "call_session_created",
                 "sessionId", id,
@@ -33,6 +44,7 @@ public final class CallSessionManager {
         CallSession session = sessions.remove(sessionId);
         if (session != null) {
             session.close(reason);
+            rememberSession(session);
             LOG.log(System.Logger.Level.INFO,
                     "Closed call session {0}: slotId={1}, reason={2}",
                     sessionId, session.slotId(), reason);
@@ -58,9 +70,25 @@ public final class CallSessionManager {
                 .toList();
     }
 
+    public List<CallSession> recentSessions() {
+        synchronized (recentSessions) {
+            return List.copyOf(recentSessions);
+        }
+    }
+
     public void closeAll(String reason) {
         for (String sessionId : sessions.keySet()) {
             closeSession(sessionId, reason);
+        }
+    }
+
+    private void rememberSession(CallSession session) {
+        synchronized (recentSessions) {
+            recentSessions.removeIf(recent -> recent.sessionId().equals(session.sessionId()));
+            recentSessions.add(0, session);
+            while (recentSessions.size() > sessionHistoryDepth) {
+                recentSessions.remove(recentSessions.size() - 1);
+            }
         }
     }
 

@@ -111,7 +111,7 @@ public final class ConversationMonitorServer implements AutoCloseable {
         }
         String path = exchange.getRequestURI().getPath();
         if ("/api/sessions".equals(path)) {
-            sendJson(exchange, 200, activeSessionsJson());
+            sendJson(exchange, 200, recentSessionsJson());
             return;
         }
         if (path.startsWith("/api/sessions/")) {
@@ -178,10 +178,10 @@ public final class ConversationMonitorServer implements AutoCloseable {
         return json.toString();
     }
 
-    private String activeSessionsJson() {
+    private String recentSessionsJson() {
         StringBuilder json = new StringBuilder();
         json.append("{\"sessions\":[");
-        List<CallSession> sessions = sessionManager.activeSessions();
+        List<CallSession> sessions = sessionManager.recentSessions();
         for (int i = 0; i < sessions.size(); i++) {
             if (i > 0) {
                 json.append(',');
@@ -191,10 +191,15 @@ public final class ConversationMonitorServer implements AutoCloseable {
                     .append(",\"slotId\":\"").append(json(session.slotId())).append("\"")
                     .append(",\"state\":\"").append(json(session.state().name().toLowerCase())).append("\"")
                     .append(",\"startedAt\":\"").append(json(TIMESTAMP_FORMATTER.format(session.startedAt()))).append("\"")
+                    .append(",\"endedAt\":\"").append(json(formatInstant(session.endedAt()))).append("\"")
                     .append("}");
         }
         json.append("]}");
         return json.toString();
+    }
+
+    private static String formatInstant(java.time.Instant instant) {
+        return instant == null ? "" : TIMESTAMP_FORMATTER.format(instant);
     }
 
     private static void appendEvents(StringBuilder json, List<ConversationEvent> events) {

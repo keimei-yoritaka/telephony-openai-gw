@@ -244,6 +244,7 @@ monitor:
   bindAddress: 127.0.0.1
   port: 8080
   maxEvents: 500
+  sessionHistoryDepth: 10
 ```
 
 注意:

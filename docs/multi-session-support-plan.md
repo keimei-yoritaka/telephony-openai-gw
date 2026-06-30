@@ -159,6 +159,7 @@ monitor:
   bindAddress: 127.0.0.1
   port: 8080
   maxEvents: 500
+  sessionHistoryDepth: 10
 ```
 
 この形式では、トップレベルに`gateway.sessionIds`を置き、各スロットを`session.<slotId>` sectionとして表現する。見た目は通常のYAML配列より少し冗長だが、既存scriptの手動`javac`起動を壊さずに済む。

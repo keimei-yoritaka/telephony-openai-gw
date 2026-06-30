@@ -30,7 +30,8 @@ public final class GatewayConfigLoader {
                         booleanValue(values, "monitor.enabled", false),
                         optionalValue(values, "monitor.bindAddress", "127.0.0.1"),
                         intValue(values, "monitor.port", 8080),
-                        intValue(values, "monitor.maxEvents", 500)
+                        intValue(values, "monitor.maxEvents", 500),
+                        intValue(values, "monitor.sessionHistoryDepth", 10)
                 )
         );
         config.validate();

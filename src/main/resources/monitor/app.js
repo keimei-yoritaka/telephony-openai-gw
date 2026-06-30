@@ -64,6 +64,7 @@ function renderEvent(event) {
     slotId: activeSessions.get(event.sessionId)?.slotId || "session",
     state: activeSessions.get(event.sessionId)?.state || "active",
     startedAt: activeSessions.get(event.sessionId)?.startedAt || event.timestamp,
+    endedAt: activeSessions.get(event.sessionId)?.endedAt || "",
   });
 
   if (!selectedSessionId) {
@@ -88,6 +89,7 @@ function rememberSession(session) {
     slotId: session.slotId || "session",
     state: session.state || "active",
     startedAt: session.startedAt || "",
+    endedAt: session.endedAt || "",
   });
 }
 
@@ -122,7 +124,12 @@ function renderSessionList() {
     id.className = "session-id-short";
     id.textContent = shortSessionId(session.sessionId);
 
-    button.append(slot, id);
+    const state = document.createElement("span");
+    state.className = "session-state";
+    state.dataset.state = session.state || "active";
+    state.textContent = session.state === "closed" ? "ended" : "active";
+
+    button.append(slot, id, state);
     button.addEventListener("click", () => {
       selectSession(session.sessionId);
     });

@@ -27,7 +27,7 @@ public final class GatewayApp {
 
     public GatewayApp(GatewayConfig config) {
         this.config = config;
-        this.sessionManager = new CallSessionManager();
+        this.sessionManager = new CallSessionManager(config.monitor().sessionHistoryDepth());
         this.audioBridge = new AudioBridge(config.media());
         this.conversationEventHub = new ConversationEventHub(config.monitor().maxEvents());
         this.conversationMonitorServer = new ConversationMonitorServer(config.monitor(), conversationEventHub, sessionManager);

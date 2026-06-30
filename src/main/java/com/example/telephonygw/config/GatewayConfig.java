@@ -167,11 +167,12 @@ public record GatewayConfig(
         }
     }
 
-    public record MonitorConfig(boolean enabled, String bindAddress, int port, int maxEvents) {
+    public record MonitorConfig(boolean enabled, String bindAddress, int port, int maxEvents, int sessionHistoryDepth) {
         public void validate() {
             require("monitor.bindAddress", bindAddress);
             requireRange("monitor.port", port, 1, 65535);
             requireRange("monitor.maxEvents", maxEvents, 1, 10000);
+            requireRange("monitor.sessionHistoryDepth", sessionHistoryDepth, 1, 1000);
         }
     }
 

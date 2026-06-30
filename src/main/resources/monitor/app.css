@@ -162,6 +162,22 @@ body {
   white-space: nowrap;
 }
 
+.session-state {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #e7f7e8;
+  color: #0f6b2a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.session-state[data-state="closed"] {
+  background: #eef1ed;
+  color: var(--muted);
+}
+
 .session-list-empty {
   padding: 9px 10px;
   border: 1px solid rgba(216, 221, 214, 0.78);

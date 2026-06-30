@@ -275,6 +275,7 @@ monitor:
   bindAddress: 127.0.0.1
   port: 8080
   maxEvents: 500
+  sessionHistoryDepth: 10
 ```
 
 secretは`/etc/sysconfig/telephony-openai-gw`に配置する。
