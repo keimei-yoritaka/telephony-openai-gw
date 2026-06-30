@@ -18,6 +18,7 @@ draw.ioで編集できる図は以下に格納する。
 - `Call Flow Sequence`: 1通話の主要シーケンス
 - `Class Overview`: 主要クラスと責務の関係
 - `Audio Queue Detail`: inbound queue / outbound queueと音声処理の詳細
+- `OpenAI Realtime Sequence`: OpenAI Realtime APIとのWebSocketイベントシーケンス
 
 ## スコープ
 
@@ -169,6 +170,8 @@ OpenAIから受け取った`response.output_audio.delta`は`RealtimeSession.queu
 
 ## OpenAI Realtime API設計
 
+OpenAI Realtime APIとの詳細なWebSocketイベント順序はdraw.ioの`OpenAI Realtime Sequence`ページに記載する。
+
 ### Session生成
 
 `CallSessionManager.createSession`のlistenerとして`RealtimeClient.startSession`が呼ばれる。`RealtimeClient`は通話セッションIDに対応する`RealtimeSession`を作成し、WebSocket接続後に`session.update`を送信する。
@@ -180,6 +183,24 @@ OpenAIから受け取った`response.output_audio.delta`は`RealtimeSession.queu
 ### Transcript
 
 発信者側は`conversation.item.input_audio_transcription.completed`、AI側は`response.output_audio_transcript.done`をもとにtranscriptをログと`ConversationEventHub`へ発行する。モニターUIはこのeventをSSEで受信する。
+
+### 主要Realtimeイベント
+
+| 方向 | イベント | 処理 |
+| --- | --- | --- |
+| Gateway -> OpenAI | `session.update` | model、instructions、voice、transcription、turn_detectionを設定する。 |
+| Gateway -> OpenAI | `response.create` | 通話開始直後の初回挨拶を要求する。 |
+| Gateway -> OpenAI | `input_audio_buffer.append` | inbound queueから取得したPCMを24kHzへresampleし、base64で送信する。 |
+| OpenAI -> Gateway | `input_audio_buffer.speech_started` | ユーザー発話開始候補として記録し、barge-in判定の起点にする。 |
+| OpenAI -> Gateway | `input_audio_buffer.speech_stopped` | ユーザー発話停止時刻を記録する。 |
+| OpenAI -> Gateway | `input_audio_buffer.committed` | OpenAI側で入力音声がcommitされた時刻を記録する。 |
+| OpenAI -> Gateway | `conversation.item.input_audio_transcription.completed` | 発信者側transcriptとしてログとモニターへ発行する。 |
+| OpenAI -> Gateway | `response.created` | AI応答開始としてoutbound active状態にする。 |
+| OpenAI -> Gateway | `response.output_audio.delta` | AI音声PCMをdecode/downsampleし、outbound queueへ投入する。 |
+| OpenAI -> Gateway | `response.output_audio.done` | AI音声delta完了としてoutbound complete状態にする。 |
+| OpenAI -> Gateway | `response.output_audio_transcript.done` | AI側transcriptとしてログとモニターへ発行する。 |
+| OpenAI -> Gateway | `response.done` | 応答完了、遅延、queue深さなどをログ出力する。 |
+| Gateway -> OpenAI | `response.cancel` | barge-in条件成立時に送信し、未送話AI音声を破棄する。 |
 
 ## Barge-in制御
 
