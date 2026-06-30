@@ -98,6 +98,8 @@ grep 'GW_EVENT' apl.log
 
 ## RHEL 8.10デモ環境
 
+既存RHELデモ環境へアプリケーション差分を反映する場合は、初回導入手順ではなく[RHELデモ環境への差分反映手順](rhel-update-patch-guide.md)を参照する。
+
 ### 前提
 
 - AWS EC2上のRHEL 8.10 x86_64

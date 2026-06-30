@@ -131,6 +131,7 @@ RHEL EC2で外部ブラウザから確認する場合は、`monitor.bindAddress:
 
 - [要件・実装計画](docs/requirements-and-implementation-plan.md)
 - [デプロイメントガイド](docs/deployment-guide.md)
+- [RHELデモ環境への差分反映手順](docs/rhel-update-patch-guide.md)
 - [PJSUA2 Java Binding 調査メモ](docs/pjsua2-java-notes.md)
 - [RTP / OpenAI 音声ブリッジ実装計画](docs/rtp-media-bridge-implementation-plan.md)
 - [会話モニターUI 要件・設計メモ](docs/conversation-monitor-requirements-and-design.md)
