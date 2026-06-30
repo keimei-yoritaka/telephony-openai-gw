@@ -143,16 +143,6 @@ body {
   color: var(--brand);
 }
 
-.session-item.unread::after {
-  display: block;
-  width: 7px;
-  height: 7px;
-  margin-top: 6px;
-  border-radius: 50%;
-  background: var(--brand);
-  content: "";
-}
-
 .session-slot {
   display: block;
   font-size: 12px;

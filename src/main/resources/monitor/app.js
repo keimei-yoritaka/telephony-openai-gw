@@ -6,7 +6,6 @@ const template = document.querySelector("#message-template");
 
 const renderedIds = new Set();
 const activeSessions = new Map();
-const unreadSessionIds = new Set();
 let selectedSessionId = "";
 let eventSource = null;
 
@@ -74,7 +73,6 @@ function renderEvent(event) {
   }
 
   if (event.sessionId !== selectedSessionId) {
-    unreadSessionIds.add(event.sessionId);
     renderSessionList();
     return;
   }
@@ -114,9 +112,6 @@ function renderSessionList() {
     if (session.sessionId === selectedSessionId) {
       button.classList.add("selected");
     }
-    if (unreadSessionIds.has(session.sessionId)) {
-      button.classList.add("unread");
-    }
     button.dataset.sessionId = session.sessionId;
 
     const slot = document.createElement("span");
@@ -143,7 +138,6 @@ function renderSessionList() {
 function selectSession(sessionId, options = {}) {
   const { loadHistory = true } = options;
   selectedSessionId = sessionId || "";
-  unreadSessionIds.delete(selectedSessionId);
   setSessionLabel(selectedSessionId);
   renderSessionList();
   if (loadHistory && selectedSessionId) {
