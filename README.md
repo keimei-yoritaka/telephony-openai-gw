@@ -115,7 +115,19 @@ grep 'CALL_TRANSCRIPT' apl.log
 
 `openai.cancelResponseOnUserSpeech: true`を指定すると、アプリがAI音声を送話中でも、発信者側の発話開始をOpenAI Realtime APIが検知した時点でAI音声の送出をキャンセルします。キャンセル時はRTP送信用のOutbound audio queueをクリアし、OpenAIへ`response.cancel`を送信します。
 
-デフォルト値は`false`です。短い相づちや環境音でAI音声が止まりやすくなる副作用があるため、デモ内容に合わせて有効化してください。
+デフォルト値は`false`です。短い相づちや環境音でAI音声が止まりやすくなる副作用があるため、デモ内容に合わせて有効化してください。有効化した場合も、以下の条件を満たした場合だけキャンセルします。
+
+```yaml
+openai:
+  cancelResponseOnUserSpeech: true
+  bargeInMinSpeechMs: 600
+  bargeInMinRmsDb: -35.0
+  bargeInGraceMsAfterAssistantStarts: 500
+```
+
+- `bargeInMinSpeechMs`: `speech_started`後、この時間以上発話が継続してからキャンセル候補にする。
+- `bargeInMinRmsDb`: 入力PCMフレームのRMS音量がこの値以上の場合だけキャンセルする。
+- `bargeInGraceMsAfterAssistantStarts`: AI音声の送出開始直後、この時間内はキャンセルしない。
 
 ## 会話モニターUI
 

@@ -26,7 +26,10 @@ public final class GatewayConfigLoader {
                         intValue(values, "media.outboundQueueCapacity", 10000)
                 ),
                 new GatewayConfig.OpenAiRuntimeConfig(
-                        booleanValue(values, "openai.cancelResponseOnUserSpeech", false)
+                        booleanValue(values, "openai.cancelResponseOnUserSpeech", false),
+                        intValue(values, "openai.bargeInMinSpeechMs", 600),
+                        doubleValue(values, "openai.bargeInMinRmsDb", -35.0),
+                        intValue(values, "openai.bargeInGraceMsAfterAssistantStarts", 500)
                 ),
                 new GatewayConfig.LoggingConfig(value(values, "logging.level")),
                 new GatewayConfig.MonitorConfig(
@@ -179,6 +182,18 @@ public final class GatewayConfigLoader {
             return Integer.parseInt(value);
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(key + " must be an integer", e);
+        }
+    }
+
+    private static double doubleValue(Map<String, String> values, String key, double defaultValue) {
+        String value = values.get(key);
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(key + " must be a number", e);
         }
     }
 

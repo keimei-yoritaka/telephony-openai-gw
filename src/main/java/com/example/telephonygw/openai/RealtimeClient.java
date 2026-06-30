@@ -93,7 +93,7 @@ public final class RealtimeClient implements AutoCloseable {
                 config.inputTranscriptionModel(),
                 config.inputTranscriptionLanguage(),
                 botConfig.systemInstructions(),
-                this.runtimeConfig.cancelResponseOnUserSpeech(),
+                this.runtimeConfig,
                 audioBridge,
                 conversationEventPublisher,
                 httpClient);
@@ -132,7 +132,7 @@ public final class RealtimeClient implements AutoCloseable {
                 config.inputTranscriptionModel(),
                 config.inputTranscriptionLanguage(),
                 botConfig.systemInstructions(),
-                this.runtimeConfig.cancelResponseOnUserSpeech(),
+                this.runtimeConfig,
                 audioBridge,
                 ConversationEventPublisher.NOOP,
                 httpClient)) {

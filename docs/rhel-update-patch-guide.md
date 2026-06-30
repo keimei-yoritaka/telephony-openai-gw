@@ -243,6 +243,9 @@ media:
 
 openai:
   cancelResponseOnUserSpeech: false
+  bargeInMinSpeechMs: 600
+  bargeInMinRmsDb: -35.0
+  bargeInGraceMsAfterAssistantStarts: 500
 
 monitor:
   enabled: true

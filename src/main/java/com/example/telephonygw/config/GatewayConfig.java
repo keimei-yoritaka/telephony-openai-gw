@@ -170,8 +170,19 @@ public record GatewayConfig(
         }
     }
 
-    public record OpenAiRuntimeConfig(boolean cancelResponseOnUserSpeech) {
+    public record OpenAiRuntimeConfig(
+            boolean cancelResponseOnUserSpeech,
+            int bargeInMinSpeechMs,
+            double bargeInMinRmsDb,
+            int bargeInGraceMsAfterAssistantStarts
+    ) {
         public void validate() {
+            requireRange("openai.bargeInMinSpeechMs", bargeInMinSpeechMs, 0, 5000);
+            if (bargeInMinRmsDb < -100.0 || bargeInMinRmsDb > 0.0) {
+                throw new IllegalArgumentException(
+                        "openai.bargeInMinRmsDb must be between -100.0 and 0.0: " + bargeInMinRmsDb);
+            }
+            requireRange("openai.bargeInGraceMsAfterAssistantStarts", bargeInGraceMsAfterAssistantStarts, 0, 5000);
         }
     }
 

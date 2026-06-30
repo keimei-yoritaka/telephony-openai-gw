@@ -274,6 +274,9 @@ AI音声の送話中に発信者の発話開始を検知した時点でAI音声�
 ```yaml
 openai:
   cancelResponseOnUserSpeech: true
+  bargeInMinSpeechMs: 600
+  bargeInMinRmsDb: -35.0
+  bargeInGraceMsAfterAssistantStarts: 500
 ```
 
 ```yaml
