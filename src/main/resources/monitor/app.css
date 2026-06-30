@@ -111,6 +111,7 @@ h1 {
 }
 
 .bubble {
+  position: relative;
   max-width: calc(100% * 2 / 3);
   padding: 10px 12px 7px;
   border-radius: 8px;
@@ -123,9 +124,31 @@ h1 {
   border-top-right-radius: 2px;
 }
 
+.caller .bubble::after {
+  position: absolute;
+  top: 0;
+  right: -8px;
+  width: 0;
+  height: 0;
+  border-top: 13px solid var(--caller);
+  border-right: 9px solid transparent;
+  content: "";
+}
+
 .assistant .bubble {
   background: var(--assistant);
   border-top-left-radius: 2px;
+}
+
+.assistant .bubble::before {
+  position: absolute;
+  top: 0;
+  left: -8px;
+  width: 0;
+  height: 0;
+  border-top: 13px solid var(--assistant);
+  border-left: 9px solid transparent;
+  content: "";
 }
 
 .text {
