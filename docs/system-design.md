@@ -17,6 +17,7 @@ draw.ioで編集できる図は以下に格納する。
 - `System Architecture`: システム全体構成
 - `Call Flow Sequence`: 1通話の主要シーケンス
 - `Class Overview`: 主要クラスと責務の関係
+- `Audio Queue Detail`: inbound queue / outbound queueと音声処理の詳細
 
 ## スコープ
 
@@ -125,6 +126,8 @@ G.722はRTP clock上は`G722/8000`として表現されるが、PJSIP media brid
 
 ## 音声処理設計
 
+詳細なqueue処理はdraw.ioの`Audio Queue Detail`ページに記載する。
+
 ### Inbound
 
 1. `Pjsua2AudioBridgePort.onFrameReceived`がPJSUA2からPCM frameを受け取る。
@@ -149,6 +152,20 @@ media:
 ```
 
 Queueは通話セッションごとに作成される。capacity値は全セッション共通である。
+
+### Inbound queue詳細
+
+`AudioBridge`は`inboundQueues[sessionId]`として通話セッションごとの`AudioQueue`を持つ。`Pjsua2AudioBridgePort.onFrameReceived`は20ms単位のPCM frameを`AudioFrame(direction=INBOUND)`として投入する。`RealtimeClient`は通話セッションごとにforwarding workerを起動し、`pollInbound(sessionId)`でframeを取り出す。
+
+workerが取り出したframeは`RealtimeSession.appendInputAudio`でOpenAI向け24kHz PCMへresampleされ、`input_audio_buffer.append`として送信される。barge-in有効時は、この入力PCM frameのRMS音量を使ってAI応答キャンセル条件を評価する。
+
+### Outbound queue詳細
+
+OpenAIから受け取った`response.output_audio.delta`は`RealtimeSession.queueOutputAudio`でdecodeされ、通話のRTP sample rateへdownsampleされる。生成した20ms PCM frameは`AudioFrame(direction=OUTBOUND)`として`outboundQueues[sessionId]`へ投入する。
+
+`Pjsua2AudioBridgePort.onFrameRequested`はPJSUA2からの送話要求ごとに`pollOutbound(sessionId)`する。再生開始時は`OUTBOUND_START_BUFFER_FRAMES=8`を下回る場合にsilenceを返し、短いbufferを作ってから再生を開始する。queueが空の場合もsilence frameを返す。
+
+`RealtimeSession`がOpenAI応答完了を検知すると`markOutboundComplete(sessionId)`を呼び、`Pjsua2AudioBridgePort`はqueueが空になった時点で再生状態を終了する。barge-in条件を満たした場合は`clearOutbound(sessionId)`で未送話のAI音声を破棄する。
 
 ## OpenAI Realtime API設計
 
