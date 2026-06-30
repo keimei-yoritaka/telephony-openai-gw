@@ -92,6 +92,7 @@ public final class ConversationMonitorServer implements AutoCloseable {
         switch (path) {
             case "/", "/index.html" -> sendAsset(exchange, "index.html", "text/html; charset=utf-8");
             case "/fabicon.ico", "/favicon.ico" -> sendAsset(exchange, "fabicon.ico", "image/x-icon");
+            case "/background.png" -> sendAsset(exchange, "background.png", "image/png");
             case "/assets/app.css" -> sendAsset(exchange, "app.css", "text/css; charset=utf-8");
             case "/assets/app.js" -> sendAsset(exchange, "app.js", "application/javascript; charset=utf-8");
             default -> sendText(exchange, 404, "Not Found\n", "text/plain; charset=utf-8");
