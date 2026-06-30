@@ -8,15 +8,12 @@
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-  <main class="app-shell">
-    <header class="topbar">
-      <div>
-        <h1>HCLTech TMP OpenAI Gateway</h1>
-        <p id="session-label" class="session-label">session: -</p>
-      </div>
-      <div id="connection-state" class="connection-state" data-state="connecting">connecting</div>
-    </header>
+  <aside class="status-panel" aria-label="session status">
+    <p id="session-label" class="session-label">session: -</p>
+    <div id="connection-state" class="connection-state" data-state="connecting">connecting</div>
+  </aside>
 
+  <main class="app-shell">
     <section id="timeline" class="timeline" aria-live="polite"></section>
   </main>
 
