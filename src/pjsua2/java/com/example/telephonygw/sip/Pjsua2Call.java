@@ -21,6 +21,7 @@ final class Pjsua2Call extends Call {
     private static final System.Logger LOG = System.getLogger(Pjsua2Call.class.getName());
 
     private final String sessionId;
+    private final String slotId;
     private final Map<Integer, Pjsua2Call> activeCalls;
     private final CallSessionManager sessionManager;
     private final AudioBridge audioBridge;
@@ -31,12 +32,14 @@ final class Pjsua2Call extends Call {
             Account account,
             int callId,
             String sessionId,
+            String slotId,
             Map<Integer, Pjsua2Call> activeCalls,
             CallSessionManager sessionManager,
             AudioBridge audioBridge
     ) {
         super(account, callId);
         this.sessionId = sessionId;
+        this.slotId = slotId;
         this.activeCalls = activeCalls;
         this.sessionManager = sessionManager;
         this.audioBridge = audioBridge;
@@ -47,10 +50,11 @@ final class Pjsua2Call extends Call {
         try {
             CallInfo info = getInfo();
             LOG.log(System.Logger.Level.INFO,
-                    "SIP call state changed: callId={0}, state={1}, status={2}, reason={3}",
-                    info.getId(), info.getStateText(), info.getLastStatusCode(), info.getLastReason());
+                    "SIP call state changed: slotId={0}, callId={1}, state={2}, status={3}, reason={4}",
+                    slotId, info.getId(), info.getStateText(), info.getLastStatusCode(), info.getLastReason());
             GatewayEventLogger.info(LOG, "sip_call_state",
                     "sessionId", sessionId,
+                    "slotId", slotId,
                     "callId", info.getId(),
                     "state", info.getStateText(),
                     "status", info.getLastStatusCode(),
@@ -74,10 +78,11 @@ final class Pjsua2Call extends Call {
         try {
             CallInfo info = getInfo();
             LOG.log(System.Logger.Level.INFO,
-                    "SIP call media state changed: callId={0}, mediaCount={1}",
-                    info.getId(), info.getMedia().size());
+                    "SIP call media state changed: slotId={0}, callId={1}, mediaCount={2}",
+                    slotId, info.getId(), info.getMedia().size());
             GatewayEventLogger.info(LOG, "sip_call_media_state",
                     "sessionId", sessionId,
+                    "slotId", slotId,
                     "callId", info.getId(),
                     "mediaCount", info.getMedia().size());
 
@@ -109,10 +114,11 @@ final class Pjsua2Call extends Call {
         callAudioMedia.startTransmit(audioBridgePort);
         audioBridgePort.startTransmit(callAudioMedia);
         LOG.log(System.Logger.Level.INFO,
-                "Attached PJSUA2 audio bridge: callId={0}, sessionId={1}, mediaIndex={2}, codec={3}, sampleRateHz={4}",
-                getId(), sessionId, mediaIndex, format.codecName(), format.sampleRateHz());
+                "Attached PJSUA2 audio bridge: slotId={0}, callId={1}, sessionId={2}, mediaIndex={3}, codec={4}, sampleRateHz={5}",
+                slotId, getId(), sessionId, mediaIndex, format.codecName(), format.sampleRateHz());
         GatewayEventLogger.info(LOG, "rtp_audio_bridge_attached",
                 "sessionId", sessionId,
+                "slotId", slotId,
                 "callId", getId(),
                 "mediaIndex", mediaIndex,
                 "codec", format.codecName(),
@@ -125,10 +131,11 @@ final class Pjsua2Call extends Call {
             String codecName = streamInfo.getCodecName();
             int sampleRateHz = sampleRate(codecName, streamInfo.getCodecClockRate());
             LOG.log(System.Logger.Level.INFO,
-                    "Detected negotiated SIP media format: callId={0}, mediaIndex={1}, codec={2}, codecClockRate={3}, bridgeSampleRateHz={4}",
-                    getId(), mediaIndex, codecName, streamInfo.getCodecClockRate(), sampleRateHz);
+                    "Detected negotiated SIP media format: slotId={0}, callId={1}, mediaIndex={2}, codec={3}, codecClockRate={4}, bridgeSampleRateHz={5}",
+                    slotId, getId(), mediaIndex, codecName, streamInfo.getCodecClockRate(), sampleRateHz);
             GatewayEventLogger.info(LOG, "sip_media_format",
                     "sessionId", sessionId,
+                    "slotId", slotId,
                     "callId", getId(),
                     "mediaIndex", mediaIndex,
                     "codec", codecName,
@@ -185,10 +192,12 @@ final class Pjsua2Call extends Call {
             callAudioMedia = null;
         }
         LOG.log(System.Logger.Level.INFO,
-                "Closed PJSUA2 audio bridge: callId={0}, sessionId={1}, inboundFrames={2}, outboundFrames={3}, outboundSilenceFrames={4}, elapsedMs={5}",
-                getId(), sessionId, inboundFrameCount, outboundFrameCount, outboundSilenceFrameCount, elapsedMillis);
+                "Closed PJSUA2 audio bridge: slotId={0}, callId={1}, sessionId={2}, inboundFrames={3}, outboundFrames={4}, outboundSilenceFrames={5}, elapsedMs={6}",
+                slotId, getId(), sessionId, inboundFrameCount, outboundFrameCount, outboundSilenceFrameCount,
+                elapsedMillis);
         GatewayEventLogger.info(LOG, "rtp_audio_bridge_closed",
                 "sessionId", sessionId,
+                "slotId", slotId,
                 "callId", getId(),
                 "inboundFrames", inboundFrameCount,
                 "outboundFrames", outboundFrameCount,

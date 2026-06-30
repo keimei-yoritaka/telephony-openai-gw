@@ -26,6 +26,7 @@ public final class Main {
         Runtime.getRuntime().addShutdownHook(new Thread(app::stop, "gateway-shutdown"));
         app.start();
         if (containsArg(args, "--startup-check")) {
+            Thread.sleep(2000);
             app.stop();
             return;
         }

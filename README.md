@@ -2,16 +2,17 @@
 
 SIP/RTPによる電話音声とOpenAIの音声Botを接続する軽量Gatewayを構築するプロジェクトです。
 
-初期方針では、JavaアプリケーションからPJSUA2 Java bindingを利用し、SIP Registration、UDP/IPv4のSIP/RTP、PCMU音声、OpenAI Realtime API連携を実装します。
+JavaアプリケーションからPJSUA2 Java bindingを利用し、SIP Registration、UDP/IPv4のSIP/RTP、G.722/PCMU音声、OpenAI Realtime API連携を実装します。
 
 ## 現在の状態
 
-- 要件・実装計画を整理済みです。
 - GitHub Repositoryは`telephony-openai-gw`としてprivateで管理しています。
-- Javaアプリケーション雛形を作成済みです。
 - SIP backendは`placeholder`と`pjsua2`を設定で切り替えられます。
-- PJSUA2 backendでは、macOS上でEndpoint起動、UDP/IPv4 SIP transport作成、AccountConfigによるRegistration開始、停止まで確認済みです。
-- 現時点のmedia、OpenAI連携はplaceholder実装です。
+- PJSUA2 backendでは、複数の固定セッションスロットごとにUDP transport、SIP Account、Registrationを作成します。
+- 各セッションスロットは最大1コールを受け付け、OpenAI Realtime sessionと1:1で紐付きます。
+- OpenAI voice、system instructions、initial greetingはセッションスロットごとに設定できます。
+- inbound/outbound audio queueは通話セッションごとに分離し、capacityは`media`設定で共通値として指定できます。
+- OpenAIへのinbound音声転送workerは通話セッションごとに起動します。
 
 ## ローカル確認
 
@@ -31,7 +32,17 @@ scripts/run-local.sh
 
 `gradle`または`gradlew`が利用できる場合、`scripts/run-local.sh`はGradle経由で起動します。どちらも無い場合は、外部依存なしの範囲で`javac`によりcompileして起動します。
 
-現時点ではPJSUA2 Java bindingをまだ組み込んでいないため、SIP RegistrationやOpenAI Realtime接続は実際には行わず、placeholderとしてログ出力します。
+`config/gateway.example.yaml`はplaceholder backendの複数スロット設定例です。PJSUA2を使う場合は`config/gateway.pjsua2.example.yaml`を雛形にして、スロットごとのSIP Registration情報とOpenAI API keyを実環境値に置き換えてください。
+
+デモ用途の実行設定である`config/gateway.local.yaml`はgit管理外です。このファイルに限り、スロットごとの`registration.password`へSIP passwordを平文で記載して構いません。`config/*.example.yaml`やREADME、設計文書などcommit対象のファイルには、実passwordやAPI keyを書かずplaceholderを使います。
+
+音声queueのcapacityは全セッション共通値として`media`セクションで指定します。queue自体は通話セッションごとに作成されます。
+
+```yaml
+media:
+  inboundQueueCapacity: 500
+  outboundQueueCapacity: 10000
+```
 
 PJSUA2 Java bindingのbuild確認:
 
@@ -94,7 +105,7 @@ grep 'GW_EVENT' apl.log
 grep 'CALL_TRANSCRIPT' apl.log
 ```
 
-発信者側の音声認識結果は`speaker=caller`、OpenAI側の音声応答transcriptは`speaker=assistant`として出力されます。発信者側transcriptionは`openai.transcriptLoggingEnabled`で有効化され、`openai.inputTranscriptionModel`と`openai.inputTranscriptionLanguage`でmodelと言語ヒントを指定します。transcriptには通話内容が含まれるため、logの保存・共有時は個人情報や機密情報の扱いに注意してください。
+発信者側の音声認識結果は`speaker=caller`、OpenAI側の音声応答transcriptは`speaker=assistant`として出力されます。発信者側transcriptionはスロットごとの`openai.transcriptLoggingEnabled`で有効化され、`openai.inputTranscriptionModel`と`openai.inputTranscriptionLanguage`でmodelと言語ヒントを指定します。transcriptには通話内容が含まれるため、logの保存・共有時は個人情報や機密情報の扱いに注意してください。
 
 アプリケーション側のログレベルは`config/*.yaml`の`logging.level`で指定します。対応値は`TRACE`、`DEBUG`、`INFO`、`WARN`、`WARNING`、`ERROR`です。
 

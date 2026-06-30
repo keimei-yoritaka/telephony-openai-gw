@@ -8,6 +8,7 @@
 *.p12
 *.jks
 config/gateway.local.yaml
+config/gateway.local.yaml.bak-*
 
 # Java / Gradle build outputs
 .gradle/

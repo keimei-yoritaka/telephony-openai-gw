@@ -12,12 +12,11 @@ if [ ! -f "${PJSUA2_OUTPUT_DIR}/${PJSUA2_LIB_NAME}" ]; then
 fi
 
 if ! awk '
-  $1 == "sip:" { in_sip = 1; next }
-  /^[^[:space:]]/ { in_sip = 0 }
-  in_sip && $1 == "backend:" && tolower($2) == "pjsua2" { found = 1 }
+  $1 == "backend:" && tolower($2) == "pjsua2" { found = 1 }
+  $1 == "sip.backend:" && tolower($2) == "pjsua2" { found = 1 }
   END { exit found ? 0 : 1 }
 ' "${CONFIG_PATH}"; then
-  echo "PJSUA2通常起動には sip.backend: pjsua2 の設定ファイルを指定してください: ${CONFIG_PATH}" >&2
+  echo "PJSUA2通常起動には sip.backend または session.*.sip.backend が pjsua2 の設定ファイルを指定してください: ${CONFIG_PATH}" >&2
   exit 1
 fi
 

@@ -299,6 +299,7 @@ public final class RealtimeSession implements AutoCloseable {
         private long currentResponseChunks;
         private long currentResponsePcm24Bytes;
         private long currentResponseQueuedFrames;
+        private long currentResponseDroppedFrames;
 
         private SessionListener(
                 String callSessionId,
@@ -396,9 +397,10 @@ public final class RealtimeSession implements AutoCloseable {
                     outputAudioDoneNanos = eventNanos;
                     audioBridge.markOutboundComplete(callSessionId);
                     LOG.log(System.Logger.Level.INFO,
-                            "OpenAI output audio completed: sessionId={0}, responseChunks={1}, responsePcm24Bytes={2}, responseQueuedFrames={3}, responseAudioMs={4}, firstAudioLatencyMs={5}, outputDurationMs={6}, pendingBytes={7}, outboundDepth={8}",
+                            "OpenAI output audio completed: sessionId={0}, responseChunks={1}, responsePcm24Bytes={2}, responseQueuedFrames={3}, responseDroppedFrames={4}, responseAudioMs={5}, firstAudioLatencyMs={6}, outputDurationMs={7}, pendingBytes={8}, outboundDepth={9}",
                             callSessionId, currentResponseChunks, currentResponsePcm24Bytes,
                             currentResponseQueuedFrames,
+                            currentResponseDroppedFrames,
                             currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
                             elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
                             elapsedMillis(firstAudioDeltaNanos, outputAudioDoneNanos),
@@ -407,6 +409,7 @@ public final class RealtimeSession implements AutoCloseable {
                             "sessionId", callSessionId,
                             "responseChunks", currentResponseChunks,
                             "responseQueuedFrames", currentResponseQueuedFrames,
+                            "responseDroppedFrames", currentResponseDroppedFrames,
                             "responseAudioMs", currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
                             "firstAudioLatencyMs", elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
                             "responseCreatedToFirstAudioMs", elapsedMillis(responseCreatedNanos, firstAudioDeltaNanos),
@@ -422,11 +425,12 @@ public final class RealtimeSession implements AutoCloseable {
                     responseActive.set(false);
                     audioBridge.markOutboundComplete(callSessionId);
                     LOG.log(System.Logger.Level.INFO,
-                            "OpenAI response done details: sessionId={0}, status={1}, statusDetails={2}, responseQueuedFrames={3}, responseAudioMs={4}, firstAudioLatencyMs={5}, responseTotalLatencyMs={6}, outboundDepth={7}",
+                            "OpenAI response done details: sessionId={0}, status={1}, statusDetails={2}, responseQueuedFrames={3}, responseDroppedFrames={4}, responseAudioMs={5}, firstAudioLatencyMs={6}, responseTotalLatencyMs={7}, outboundDepth={8}",
                             callSessionId,
                             extractStringField(payload, "status", 0),
                             extractJsonFieldSnippet(payload, "status_details"),
                             currentResponseQueuedFrames,
+                            currentResponseDroppedFrames,
                             currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
                             elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
                             elapsedMillis(inputCommittedNanos, eventNanos),
@@ -435,6 +439,7 @@ public final class RealtimeSession implements AutoCloseable {
                             "sessionId", callSessionId,
                             "status", extractStringField(payload, "status", 0),
                             "responseQueuedFrames", currentResponseQueuedFrames,
+                            "responseDroppedFrames", currentResponseDroppedFrames,
                             "responseAudioMs", currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
                             "firstAudioLatencyMs", elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
                             "responseCreatedToFirstAudioMs", elapsedMillis(responseCreatedNanos, firstAudioDeltaNanos),
@@ -530,6 +535,17 @@ public final class RealtimeSession implements AutoCloseable {
                                     "Queued OpenAI output audio frame for RTP: sessionId={0}, frames={1}, outboundDepth={2}",
                                     callSessionId, count, audioBridge.outboundDepth(callSessionId));
                         }
+                    } else {
+                        currentResponseDroppedFrames++;
+                        if (currentResponseDroppedFrames == 1 || currentResponseDroppedFrames % 50 == 0) {
+                            LOG.log(System.Logger.Level.WARNING,
+                                    "Dropped OpenAI output audio frame because outbound queue is full: sessionId={0}, responseDroppedFrames={1}, outboundDepth={2}",
+                                    callSessionId, currentResponseDroppedFrames, audioBridge.outboundDepth(callSessionId));
+                            GatewayEventLogger.warning(LOG, "openai_output_audio_frame_dropped",
+                                    "sessionId", callSessionId,
+                                    "responseDroppedFrames", currentResponseDroppedFrames,
+                                    "outboundDepth", audioBridge.outboundDepth(callSessionId));
+                        }
                     }
                 }
                 pendingOutputPcm.reset();
@@ -543,6 +559,7 @@ public final class RealtimeSession implements AutoCloseable {
             currentResponseChunks = 0;
             currentResponsePcm24Bytes = 0;
             currentResponseQueuedFrames = 0;
+            currentResponseDroppedFrames = 0;
             responseCreatedNanos = 0L;
             firstAudioDeltaNanos = 0L;
             outputAudioDoneNanos = 0L;

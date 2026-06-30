@@ -7,15 +7,29 @@ import java.util.Locale;
 import java.util.Set;
 
 public record GatewayConfig(
-        SipConfig sip,
-        RegistrationConfig registration,
-        OpenAiConfig openAi,
-        BotConfig bot,
+        List<SessionSlotConfig> sessions,
+        MediaConfig media,
         LoggingConfig logging,
         MonitorConfig monitor
 ) {
     private static final Set<String> SUPPORTED_REALTIME_VOICES = Set.of(
             "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar");
+
+    public record SessionSlotConfig(
+            String slotId,
+            SipConfig sip,
+            RegistrationConfig registration,
+            OpenAiConfig openAi,
+            BotConfig bot
+    ) {
+        public void validate() {
+            require("session.slotId", slotId);
+            sip.validate("session." + slotId + ".sip");
+            registration.validate("session." + slotId + ".registration");
+            openAi.validate("session." + slotId + ".openai");
+            bot.validate("session." + slotId + ".bot");
+        }
+    }
 
     public record SipConfig(
             String backend,
@@ -31,33 +45,37 @@ public record GatewayConfig(
             int rtpPortEnd
     ) {
         public void validate() {
-            require("sip.backend", backend);
+            validate("sip");
+        }
+
+        public void validate(String prefix) {
+            require(prefix + ".backend", backend);
             if (!"placeholder".equalsIgnoreCase(backend) && !"pjsua2".equalsIgnoreCase(backend)) {
-                throw new IllegalArgumentException("sip.backend must be placeholder or pjsua2: " + backend);
+                throw new IllegalArgumentException(prefix + ".backend must be placeholder or pjsua2: " + backend);
             }
-            require("sip.bindAddress", bindAddress);
-            requireRange("sip.port", port, 1, 65535);
-            requireEquals("sip.transport", transport, "UDP");
-            requireEquals("sip.ipVersion", ipVersion, "IPv4");
-            requireSupportedCodec("sip.codec", codec);
-            requireSupportedCodec("sip.preferredCodec", preferredCodec);
+            require(prefix + ".bindAddress", bindAddress);
+            requireRange(prefix + ".port", port, 1, 65535);
+            requireEquals(prefix + ".transport", transport, "UDP");
+            requireEquals(prefix + ".ipVersion", ipVersion, "IPv4");
+            requireSupportedCodec(prefix + ".codec", codec);
+            requireSupportedCodec(prefix + ".preferredCodec", preferredCodec);
             if (codecs == null || codecs.isEmpty()) {
-                throw new IllegalArgumentException("sip.codecs must include at least one codec");
+                throw new IllegalArgumentException(prefix + ".codecs must include at least one codec");
             }
             for (String supportedCodec : codecs) {
-                requireSupportedCodec("sip.codecs", supportedCodec);
+                requireSupportedCodec(prefix + ".codecs", supportedCodec);
             }
             if (!codecs.contains(preferredCodec)) {
                 throw new IllegalArgumentException(
-                        "sip.preferredCodec must be included in sip.codecs: " + preferredCodec);
+                        prefix + ".preferredCodec must be included in " + prefix + ".codecs: " + preferredCodec);
             }
-            requireRange("sip.rtpPortStart", rtpPortStart, 1024, 65534);
-            requireRange("sip.rtpPortEnd", rtpPortEnd, 1024, 65534);
-            requireEven("sip.rtpPortStart", rtpPortStart);
-            requireEven("sip.rtpPortEnd", rtpPortEnd);
+            requireRange(prefix + ".rtpPortStart", rtpPortStart, 1024, 65534);
+            requireRange(prefix + ".rtpPortEnd", rtpPortEnd, 1024, 65534);
+            requireEven(prefix + ".rtpPortStart", rtpPortStart);
+            requireEven(prefix + ".rtpPortEnd", rtpPortEnd);
             if (rtpPortStart >= rtpPortEnd) {
                 throw new IllegalArgumentException(
-                        "sip.rtpPortStart must be smaller than sip.rtpPortEnd: "
+                        prefix + ".rtpPortStart must be smaller than " + prefix + ".rtpPortEnd: "
                                 + rtpPortStart + " >= " + rtpPortEnd);
             }
         }
@@ -72,12 +90,16 @@ public record GatewayConfig(
             int registryServerPort
     ) {
         public void validate() {
-            require("registration.domain", domain);
-            require("registration.userName", userName);
-            require("registration.password", password);
-            require("registration.sipAddress", sipAddress);
-            require("registration.registryServerAddress", registryServerAddress);
-            requireRange("registration.registryServerPort", registryServerPort, 1, 65535);
+            validate("registration");
+        }
+
+        public void validate(String prefix) {
+            require(prefix + ".domain", domain);
+            require(prefix + ".userName", userName);
+            require(prefix + ".password", password);
+            require(prefix + ".sipAddress", sipAddress);
+            require(prefix + ".registryServerAddress", registryServerAddress);
+            requireRange(prefix + ".registryServerPort", registryServerPort, 1, 65535);
         }
     }
 
@@ -93,29 +115,38 @@ public record GatewayConfig(
             String inputTranscriptionLanguage
     ) {
         public void validate() {
-            require("openai.apiKey", apiKey);
-            require("openai.realtimeModel", realtimeModel);
-            require("openai.voice", voice);
+            validate("openai");
+        }
+
+        public void validate(String prefix) {
+            require(prefix + ".apiKey", apiKey);
+            require(prefix + ".realtimeModel", realtimeModel);
+            require(prefix + ".voice", voice);
             if (!SUPPORTED_REALTIME_VOICES.contains(voice.toLowerCase())) {
                 throw new IllegalArgumentException(
-                        "openai.voice must be one of: " + String.join(", ", SUPPORTED_REALTIME_VOICES) + ": " + voice);
+                        prefix + ".voice must be one of: "
+                                + String.join(", ", SUPPORTED_REALTIME_VOICES) + ": " + voice);
             }
-            requireMaxOutputTokens(maxOutputTokens);
-            require("openai.turnDetectionType", turnDetectionType);
+            requireMaxOutputTokens(prefix + ".maxOutputTokens", maxOutputTokens);
+            require(prefix + ".turnDetectionType", turnDetectionType);
             if (!"server_vad".equalsIgnoreCase(turnDetectionType)
                     && !"semantic_vad".equalsIgnoreCase(turnDetectionType)) {
                 throw new IllegalArgumentException(
-                        "openai.turnDetectionType must be server_vad or semantic_vad: " + turnDetectionType);
+                        prefix + ".turnDetectionType must be server_vad or semantic_vad: " + turnDetectionType);
             }
-            require("openai.turnDetectionEagerness", turnDetectionEagerness);
-            require("openai.inputTranscriptionModel", inputTranscriptionModel);
+            require(prefix + ".turnDetectionEagerness", turnDetectionEagerness);
+            require(prefix + ".inputTranscriptionModel", inputTranscriptionModel);
         }
     }
 
     public record BotConfig(String systemInstructions, String initialGreeting) {
         public void validate() {
-            require("bot.systemInstructions", systemInstructions);
-            require("bot.initialGreeting", initialGreeting);
+            validate("bot");
+        }
+
+        public void validate(String prefix) {
+            require(prefix + ".systemInstructions", systemInstructions);
+            require(prefix + ".initialGreeting", initialGreeting);
         }
     }
 
@@ -129,6 +160,13 @@ public record GatewayConfig(
         }
     }
 
+    public record MediaConfig(int inboundQueueCapacity, int outboundQueueCapacity) {
+        public void validate() {
+            requireRange("media.inboundQueueCapacity", inboundQueueCapacity, 1, 100000);
+            requireRange("media.outboundQueueCapacity", outboundQueueCapacity, 1, 100000);
+        }
+    }
+
     public record MonitorConfig(boolean enabled, String bindAddress, int port, int maxEvents) {
         public void validate() {
             require("monitor.bindAddress", bindAddress);
@@ -138,10 +176,27 @@ public record GatewayConfig(
     }
 
     public void validate() {
-        sip.validate();
-        registration.validate();
-        openAi.validate();
-        bot.validate();
+        if (sessions == null || sessions.isEmpty()) {
+            throw new IllegalArgumentException("gateway.sessionIds must include at least one session slot");
+        }
+        Set<String> slotIds = new java.util.HashSet<>();
+        Set<Integer> sipPorts = new java.util.HashSet<>();
+        String backend = null;
+        for (SessionSlotConfig session : sessions) {
+            session.validate();
+            if (!slotIds.add(session.slotId())) {
+                throw new IllegalArgumentException("Duplicate session slot id: " + session.slotId());
+            }
+            if (backend == null) {
+                backend = session.sip().backend().toLowerCase(Locale.ROOT);
+            } else if (!backend.equals(session.sip().backend().toLowerCase(Locale.ROOT))) {
+                throw new IllegalArgumentException("All session slots must use the same sip.backend");
+            }
+            if (!sipPorts.add(session.sip().port())) {
+                throw new IllegalArgumentException("Duplicate SIP port across session slots: " + session.sip().port());
+            }
+        }
+        media.validate();
         logging.validate();
         monitor.validate();
     }
@@ -179,16 +234,16 @@ public record GatewayConfig(
         }
     }
 
-    private static void requireMaxOutputTokens(String value) {
-        require("openai.maxOutputTokens", value);
+    private static void requireMaxOutputTokens(String key, String value) {
+        require(key, value);
         if ("inf".equalsIgnoreCase(value)) {
             return;
         }
         try {
-            requireRange("openai.maxOutputTokens", Integer.parseInt(value), 1, 4096);
+            requireRange(key, Integer.parseInt(value), 1, 4096);
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(
-                    "openai.maxOutputTokens must be an integer between 1 and 4096 or inf: " + value);
+                    key + " must be an integer between 1 and 4096 or inf: " + value);
         }
     }
 }

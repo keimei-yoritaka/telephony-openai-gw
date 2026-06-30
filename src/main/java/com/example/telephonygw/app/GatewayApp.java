@@ -28,23 +28,16 @@ public final class GatewayApp {
     public GatewayApp(GatewayConfig config) {
         this.config = config;
         this.sessionManager = new CallSessionManager();
-        this.audioBridge = new AudioBridge();
+        this.audioBridge = new AudioBridge(config.media());
         this.conversationEventHub = new ConversationEventHub(config.monitor().maxEvents());
         this.conversationMonitorServer = new ConversationMonitorServer(config.monitor(), conversationEventHub);
         this.realtimeClient = new RealtimeClient(
-                config.openAi(),
-                config.bot().systemInstructions(),
-                config.bot().initialGreeting(),
+                config.sessions(),
                 audioBridge,
                 conversationEventHub);
         this.sessionManager.addCreateListener(realtimeClient::startSession);
         this.sessionManager.addCloseListener(realtimeClient::closeSession);
-        this.sipEndpoint = new PjsipEndpoint(
-                config.sip(),
-                config.registration(),
-                config.logging(),
-                sessionManager,
-                audioBridge);
+        this.sipEndpoint = new PjsipEndpoint(config.sessions(), config.logging(), sessionManager, audioBridge);
     }
 
     public void start() {
@@ -54,19 +47,22 @@ public final class GatewayApp {
 
         LOG.log(System.Logger.Level.INFO, "Starting Telephony OpenAI Gateway");
         GatewayEventLogger.info(LOG, "gateway_starting",
-                "sipBackend", config.sip().backend(),
-                "sipBind", config.sip().bindAddress(),
-                "sipPort", config.sip().port(),
-                "sipTransport", config.sip().transport(),
-                "openaiModel", config.openAi().realtimeModel(),
-                "voice", config.openAi().voice());
-        LOG.log(System.Logger.Level.INFO, "Configured SIP endpoint {0}:{1}/{2}",
-                config.sip().bindAddress(), config.sip().port(), config.sip().transport());
+                "sessionSlots", config.sessions().size());
+        for (GatewayConfig.SessionSlotConfig sessionSlot : config.sessions()) {
+            LOG.log(System.Logger.Level.INFO,
+                    "Configured session slot {0}: sipEndpoint={1}:{2}/{3}, openaiModel={4}, voice={5}",
+                    sessionSlot.slotId(),
+                    sessionSlot.sip().bindAddress(),
+                    sessionSlot.sip().port(),
+                    sessionSlot.sip().transport(),
+                    sessionSlot.openAi().realtimeModel(),
+                    sessionSlot.openAi().voice());
+        }
 
         conversationMonitorServer.start();
         realtimeClient.initialize();
         audioBridge.initialize();
-        realtimeClient.startAudioForwarding(audioBridge.inboundQueue());
+        realtimeClient.startAudioForwarding();
         sipEndpoint.start();
         sipEndpoint.register();
 

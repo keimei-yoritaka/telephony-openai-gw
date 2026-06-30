@@ -21,17 +21,20 @@ public final class Pjsua2Account extends Account {
     private static final Pattern RECEIVED_PATTERN = Pattern.compile("(?i)(?:^|;)\\s*received=([^;\\s]+)");
     private static final Pattern RPORT_PATTERN = Pattern.compile("(?i)(?:^|;)\\s*rport=([0-9]+)");
 
+    private final String slotId;
     private final CallSessionManager sessionManager;
     private final AudioBridge audioBridge;
     private final RegistrationAddressObserver registrationAddressObserver;
     private final Map<Integer, Pjsua2Call> activeCalls = new ConcurrentHashMap<>();
 
     public Pjsua2Account(
+            String slotId,
             CallSessionManager sessionManager,
             AudioBridge audioBridge,
             RegistrationAddressObserver registrationAddressObserver
     ) {
         super();
+        this.slotId = slotId;
         this.sessionManager = sessionManager;
         this.audioBridge = audioBridge;
         this.registrationAddressObserver = registrationAddressObserver;
@@ -40,24 +43,28 @@ public final class Pjsua2Account extends Account {
     @Override
     public void onRegState(OnRegStateParam prm) {
         LOG.log(System.Logger.Level.INFO,
-                "SIP Registration state changed: code={0}, reason={1}, expiration={2}",
-                prm.getCode(), prm.getReason(), prm.getExpiration());
+                "SIP Registration state changed: slotId={0}, code={1}, reason={2}, expiration={3}",
+                slotId, prm.getCode(), prm.getReason(), prm.getExpiration());
         GatewayEventLogger.info(LOG, "sip_registration_state",
+                "slotId", slotId,
                 "code", prm.getCode(),
                 "reason", prm.getReason(),
                 "expiration", prm.getExpiration());
         if (prm.getCode() >= 200 && prm.getCode() < 300) {
             extractReflexiveAddress(prm).ifPresent(address ->
                     registrationAddressObserver.onRegistrationReflexiveAddressDetected(
-                            address.publicAddress(), address.publicPort()));
+                            slotId, address.publicAddress(), address.publicPort()));
         }
     }
 
     @Override
     public void onIncomingCall(OnIncomingCallParam prm) {
         int callId = prm.getCallId();
-        LOG.log(System.Logger.Level.INFO, "Incoming SIP INVITE received: callId={0}", callId);
+        LOG.log(System.Logger.Level.INFO,
+                "Incoming SIP INVITE received: slotId={0}, callId={1}",
+                slotId, callId);
         GatewayEventLogger.info(LOG, "sip_invite_received",
+                "slotId", slotId,
                 "callId", callId,
                 "activeCalls", activeCalls.size());
 
@@ -66,8 +73,9 @@ public final class Pjsua2Account extends Account {
             return;
         }
 
-        CallSession session = sessionManager.createSession();
-        Pjsua2Call call = new Pjsua2Call(this, callId, session.sessionId(), activeCalls, sessionManager, audioBridge);
+        CallSession session = sessionManager.createSession(slotId);
+        Pjsua2Call call = new Pjsua2Call(
+                this, callId, session.sessionId(), slotId, activeCalls, sessionManager, audioBridge);
         activeCalls.put(callId, call);
 
         try {
@@ -75,10 +83,11 @@ public final class Pjsua2Account extends Account {
             answer.setStatusCode(pjsip_status_code.PJSIP_SC_OK);
             call.answer(answer);
             LOG.log(System.Logger.Level.INFO,
-                    "Answered incoming SIP call: callId={0}, sessionId={1}",
-                    callId, session.sessionId());
+                    "Answered incoming SIP call: slotId={0}, callId={1}, sessionId={2}",
+                    slotId, callId, session.sessionId());
             GatewayEventLogger.info(LOG, "sip_call_answered",
-                    "sessionId", session.sessionId(),
+                "sessionId", session.sessionId(),
+                    "slotId", slotId,
                     "callId", callId,
                     "status", 200);
         } catch (Exception e) {
@@ -87,24 +96,29 @@ public final class Pjsua2Account extends Account {
             LOG.log(System.Logger.Level.ERROR, "Failed to answer incoming SIP call: " + e.getMessage(), e);
             GatewayEventLogger.warning(LOG, "sip_call_answer_failed",
                     "sessionId", session.sessionId(),
+                    "slotId", slotId,
                     "callId", callId,
                     "error", e.getMessage());
         }
     }
 
     private void answerBusy(int callId) {
-        Pjsua2Call call = new Pjsua2Call(this, callId, null, activeCalls, sessionManager, audioBridge);
+        Pjsua2Call call = new Pjsua2Call(this, callId, null, slotId, activeCalls, sessionManager, audioBridge);
         try {
             CallOpParam answer = new CallOpParam(true);
             answer.setStatusCode(pjsip_status_code.PJSIP_SC_BUSY_HERE);
             call.answer(answer);
-            LOG.log(System.Logger.Level.INFO, "Rejected incoming SIP call as busy: callId={0}", callId);
+            LOG.log(System.Logger.Level.INFO,
+                    "Rejected incoming SIP call as busy: slotId={0}, callId={1}",
+                    slotId, callId);
             GatewayEventLogger.info(LOG, "sip_call_rejected_busy",
+                    "slotId", slotId,
                     "callId", callId,
                     "activeCalls", activeCalls.size());
         } catch (Exception e) {
             LOG.log(System.Logger.Level.ERROR, "Failed to reject incoming SIP call: " + e.getMessage(), e);
             GatewayEventLogger.warning(LOG, "sip_call_reject_failed",
+                    "slotId", slotId,
                     "callId", callId,
                     "error", e.getMessage());
         } finally {

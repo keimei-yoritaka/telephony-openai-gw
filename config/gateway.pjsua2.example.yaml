@@ -1,45 +1,72 @@
-sip:
-  backend: pjsua2
-  bindAddress: 0.0.0.0
-  port: 5060
-  transport: UDP
-  ipVersion: IPv4
-  # codecは後方互換用。新規設定ではpreferredCodec/codecsを利用する。
-  codec: PCMU
-  preferredCodec: G722
-  codecs: G722,PCMU
-  # 空の場合、REGISTER応答のVia received/rportからNAT external側IPを自動検出する。
-  # 自動検出を使わず固定したい場合は、router/NATのexternal側IPまたは名前を指定する。
-  publicContactAddress: ""
-  # RTP portは偶数のみを指定する。RTCPはRTP port + 1を使う。
-  rtpPortStart: 40000
-  rtpPortEnd: 41000
+gateway:
+  sessionIds: session-1,session-2
 
-registration:
-  domain: example.com
-  userName: bot-gateway
-  password: ${SIP_REGISTRATION_PASSWORD}
-  sipAddress: sip:bot-gateway@example.com
-  registryServerAddress: registrar.example.com
-  registryServerPort: 5060
+session.session-1:
+  sip.backend: pjsua2
+  sip.bindAddress: 0.0.0.0
+  sip.port: 5070
+  sip.transport: UDP
+  sip.ipVersion: IPv4
+  sip.codec: PCMU
+  sip.preferredCodec: G722
+  sip.codecs: G722,PCMU
+  sip.publicContactAddress: ""
+  sip.rtpPortStart: 40000
+  sip.rtpPortEnd: 41000
+  registration.domain: example.com
+  registration.userName: bot-gateway-1
+  registration.password: ${SIP_REGISTRATION_PASSWORD_1}
+  registration.sipAddress: sip:bot-gateway-1@example.com
+  registration.registryServerAddress: registrar.example.com
+  registration.registryServerPort: 5060
+  openai.apiKey: ${OPENAI_API_KEY}
+  openai.realtimeModel: gpt-realtime
+  openai.voice: coral
+  openai.maxOutputTokens: inf
+  openai.turnDetectionType: semantic_vad
+  openai.turnDetectionEagerness: low
+  openai.transcriptLoggingEnabled: true
+  openai.inputTranscriptionModel: gpt-realtime-whisper
+  openai.inputTranscriptionLanguage: ja
+  bot.systemInstructions: "あなたはsession-1の電話応対を行うAIアシスタントです。回答は原則1文、できるだけ短く、相手が話し終わるまで待ってから返答してください。"
+  bot.initialGreeting: "こちらは一番窓口です。ご用件をお話しください。"
 
-openai:
-  apiKey: ${OPENAI_API_KEY}
-  realtimeModel: gpt-realtime
-  voice: shimmer
-  maxOutputTokens: inf
-  turnDetectionType: semantic_vad
-  turnDetectionEagerness: low
-  transcriptLoggingEnabled: true
-  inputTranscriptionModel: gpt-realtime-whisper
-  inputTranscriptionLanguage: ja
-
-bot:
-  systemInstructions: "あなたは電話応対を行うAIアシスタントです。回答は原則1文、できるだけ短く、相手が話し終わるまで待ってから返答してください。柔らかく落ち着いた女性的な声の印象で話してください。"
-  initialGreeting: "こちらはAI電話受付です。ご用件をお話しください。"
+session.session-2:
+  sip.backend: pjsua2
+  sip.bindAddress: 0.0.0.0
+  sip.port: 5072
+  sip.transport: UDP
+  sip.ipVersion: IPv4
+  sip.codec: PCMU
+  sip.preferredCodec: G722
+  sip.codecs: G722,PCMU
+  sip.publicContactAddress: ""
+  sip.rtpPortStart: 41002
+  sip.rtpPortEnd: 42000
+  registration.domain: example.com
+  registration.userName: bot-gateway-2
+  registration.password: ${SIP_REGISTRATION_PASSWORD_2}
+  registration.sipAddress: sip:bot-gateway-2@example.com
+  registration.registryServerAddress: registrar.example.com
+  registration.registryServerPort: 5060
+  openai.apiKey: ${OPENAI_API_KEY}
+  openai.realtimeModel: gpt-realtime
+  openai.voice: shimmer
+  openai.maxOutputTokens: inf
+  openai.turnDetectionType: semantic_vad
+  openai.turnDetectionEagerness: low
+  openai.transcriptLoggingEnabled: true
+  openai.inputTranscriptionModel: gpt-realtime-whisper
+  openai.inputTranscriptionLanguage: ja
+  bot.systemInstructions: "あなたはsession-2の電話応対を行うAIアシスタントです。回答は原則1文、できるだけ短く、相手が話し終わるまで待ってから返答してください。"
+  bot.initialGreeting: "こちらは二番窓口です。ご用件をお話しください。"
 
 logging:
   level: INFO
+
+media:
+  inboundQueueCapacity: 500
+  outboundQueueCapacity: 10000
 
 monitor:
   enabled: true

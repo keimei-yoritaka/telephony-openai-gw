@@ -59,7 +59,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             LOG.log(System.Logger.Level.DEBUG,
                     "Observed inbound audio frame: sessionId={0}, callId={1}, frames={2}, bytes={3}, type={4}, deltaMs={5}, queueDepth={6}",
                     sessionId, callId, count, frame.getSize(), frame.getType(), deltaMillis,
-                    audioBridge.inboundQueue().depth());
+                    audioBridge.inboundDepth(sessionId));
         }
     }
 
