@@ -2,6 +2,8 @@ package com.example.telephonygw.session;
 
 import com.example.telephonygw.logging.GatewayEventLogger;
 
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -48,6 +50,12 @@ public final class CallSessionManager {
 
     public void addCreateListener(SessionCreateListener listener) {
         createListeners.add(listener);
+    }
+
+    public List<CallSession> activeSessions() {
+        return sessions.values().stream()
+                .sorted(Comparator.comparing(CallSession::startedAt).reversed())
+                .toList();
     }
 
     public void closeAll(String reason) {

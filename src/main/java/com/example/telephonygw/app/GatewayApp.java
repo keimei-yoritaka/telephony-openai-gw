@@ -30,7 +30,7 @@ public final class GatewayApp {
         this.sessionManager = new CallSessionManager();
         this.audioBridge = new AudioBridge(config.media());
         this.conversationEventHub = new ConversationEventHub(config.monitor().maxEvents());
-        this.conversationMonitorServer = new ConversationMonitorServer(config.monitor(), conversationEventHub);
+        this.conversationMonitorServer = new ConversationMonitorServer(config.monitor(), conversationEventHub, sessionManager);
         this.realtimeClient = new RealtimeClient(
                 config.sessions(),
                 audioBridge,

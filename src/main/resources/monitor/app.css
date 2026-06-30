@@ -90,6 +90,88 @@ body {
   border-color: #f1c6a5;
 }
 
+.session-panel {
+  position: fixed;
+  top: 58px;
+  right: 10px;
+  width: 190px;
+  max-width: 190px;
+  max-height: calc(100vh - 74px);
+  overflow-y: auto;
+  scrollbar-width: none;
+  z-index: 2;
+}
+
+.session-panel::-webkit-scrollbar {
+  display: none;
+}
+
+.session-list {
+  display: grid;
+  gap: 8px;
+}
+
+.session-item {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid rgba(216, 221, 214, 0.82);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 6px 18px rgba(30, 42, 34, 0.10);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  backdrop-filter: blur(8px);
+}
+
+.session-item:hover,
+.session-item:focus-visible {
+  border-color: rgba(0, 94, 184, 0.45);
+  outline: none;
+}
+
+.session-item.selected {
+  border-color: rgba(0, 94, 184, 0.70);
+  background: rgba(231, 247, 232, 0.86);
+}
+
+.session-item.unread::after {
+  display: block;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+  content: "";
+}
+
+.session-slot {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-id-short {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-list-empty {
+  padding: 9px 10px;
+  border: 1px solid rgba(216, 221, 214, 0.78);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .timeline {
   height: 100%;
   min-height: 0;
@@ -179,6 +261,17 @@ body {
   font-size: 14px;
 }
 
+@media (max-width: 1160px) {
+  .session-panel {
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    width: min(220px, calc(100vw - 20px));
+    max-width: none;
+    max-height: 34vh;
+  }
+}
+
 @media (max-width: 640px) {
   .status-panel {
     top: 8px;
@@ -189,6 +282,12 @@ body {
 
   .session-label {
     max-width: 48vw;
+  }
+
+  .session-panel {
+    right: 8px;
+    bottom: 8px;
+    width: min(220px, calc(100vw - 16px));
   }
 
   .bubble {

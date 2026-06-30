@@ -2,6 +2,8 @@ package com.example.telephonygw.monitor;
 
 import com.example.telephonygw.config.GatewayConfig.MonitorConfig;
 import com.example.telephonygw.logging.GatewayEventLogger;
+import com.example.telephonygw.session.CallSession;
+import com.example.telephonygw.session.CallSessionManager;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -10,6 +12,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
@@ -35,13 +38,15 @@ public final class ConversationMonitorServer implements AutoCloseable {
 
     private final MonitorConfig config;
     private final ConversationEventHub eventHub;
+    private final CallSessionManager sessionManager;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private HttpServer server;
     private ExecutorService executor;
 
-    public ConversationMonitorServer(MonitorConfig config, ConversationEventHub eventHub) {
+    public ConversationMonitorServer(MonitorConfig config, ConversationEventHub eventHub, CallSessionManager sessionManager) {
         this.config = config;
         this.eventHub = eventHub;
+        this.sessionManager = sessionManager;
     }
 
     public void start() {
@@ -105,22 +110,16 @@ public final class ConversationMonitorServer implements AutoCloseable {
             return;
         }
         String path = exchange.getRequestURI().getPath();
-        if (!"/api/sessions".equals(path)) {
-            sendJson(exchange, 404, "{\"error\":\"not_found\"}");
+        if ("/api/sessions".equals(path)) {
+            sendJson(exchange, 200, activeSessionsJson());
             return;
         }
-
-        StringBuilder json = new StringBuilder();
-        json.append("{\"sessions\":[");
-        List<String> sessionIds = eventHub.sessionIds();
-        for (int i = 0; i < sessionIds.size(); i++) {
-            if (i > 0) {
-                json.append(',');
-            }
-            json.append('"').append(json(sessionIds.get(i))).append('"');
+        if (path.startsWith("/api/sessions/")) {
+            String sessionId = URLDecoder.decode(path.substring("/api/sessions/".length()), StandardCharsets.UTF_8);
+            sendJson(exchange, 200, sessionJson(sessionId, eventHub.eventsForSession(sessionId)));
+            return;
         }
-        json.append("]}");
-        sendJson(exchange, 200, json.toString());
+        sendJson(exchange, 404, "{\"error\":\"not_found\"}");
     }
 
     private void handleLatestSession(HttpExchange exchange) throws IOException {
@@ -175,6 +174,25 @@ public final class ConversationMonitorServer implements AutoCloseable {
         StringBuilder json = new StringBuilder();
         json.append("{\"latestSessionId\":\"").append(json(sessionId)).append("\",\"events\":[");
         appendEvents(json, events);
+        json.append("]}");
+        return json.toString();
+    }
+
+    private String activeSessionsJson() {
+        StringBuilder json = new StringBuilder();
+        json.append("{\"sessions\":[");
+        List<CallSession> sessions = sessionManager.activeSessions();
+        for (int i = 0; i < sessions.size(); i++) {
+            if (i > 0) {
+                json.append(',');
+            }
+            CallSession session = sessions.get(i);
+            json.append("{\"sessionId\":\"").append(json(session.sessionId())).append("\"")
+                    .append(",\"slotId\":\"").append(json(session.slotId())).append("\"")
+                    .append(",\"state\":\"").append(json(session.state().name().toLowerCase())).append("\"")
+                    .append(",\"startedAt\":\"").append(json(TIMESTAMP_FORMATTER.format(session.startedAt()))).append("\"")
+                    .append("}");
+        }
         json.append("]}");
         return json.toString();
     }
