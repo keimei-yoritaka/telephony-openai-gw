@@ -21,3 +21,9 @@
 - PJSIPのnative libraryやSWIG生成物は、必要性が明確になるまでRepositoryには含めず、build scriptと手順で再現する。
 - branch運用、commit/PR運用は、ユーザー確認後に確定する。
 - GitHub作成・pushには`gh`コマンドを利用する。`gh auth status`でtoken invalidとなる場合は、ユーザーによる再認証後にRepository作成とpushを実施する。
+
+## 設計ドキュメント更新ルール
+
+- 現行仕様の設計書は`docs/system-design.md`と`docs/diagrams/telephony-openai-gw-design.drawio`で管理する。
+- SIP/RTP、OpenAI Realtime API、音声queue、barge-in制御、複数セッション、会話モニターUI、設定ファイル形式、デプロイ方式に関わる仕様変更を行う場合は、実装と同じ変更単位で設計書とdraw.io図も更新する。
+- 設計書の本文は日本語で記載し、draw.io図内のコンポーネント名・class名・protocol名は英語表記のままでよい。
