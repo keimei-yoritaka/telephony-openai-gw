@@ -173,6 +173,7 @@ gateway:
   sessionIds: session-1,session-2
 
 session.session-1:
+  name: 一番窓口
   sip.backend: pjsua2
   sip.bindAddress: 0.0.0.0
   sip.port: 5062
@@ -203,6 +204,7 @@ session.session-1:
   bot.initialGreeting: "こちらは一番窓口です。ご用件をお話しください。"
 
 session.session-2:
+  name: 二番窓口
   sip.backend: pjsua2
   sip.bindAddress: 0.0.0.0
   sip.port: 5064
@@ -250,6 +252,7 @@ monitor:
 注意:
 
 - `session.<slotId>.sip.port`はスロットごとに異なる値にする。
+- `session.<slotId>.name`はモニター画面に表示する名前として指定する。
 - `session.<slotId>.registration.*`はスロットごとに個別設定する。
 - `session.<slotId>.sip.rtpPortStart` / `rtpPortEnd`はスロット間で重複しない範囲を推奨する。
 - EC2 Security Groupとfirewalldで、利用するSIP/RTP/RTCP portを許可する。

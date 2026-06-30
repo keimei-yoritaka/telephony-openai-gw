@@ -120,6 +120,7 @@ open http://127.0.0.1:8080/
 ```
 
 会話モニターの発話イベント保持数は`monitor.maxEvents`、右側のセッション選択リストに残す最近のセッション数は`monitor.sessionHistoryDepth`で指定します。`monitor.sessionHistoryDepth`のデフォルト値は`10`です。
+右側のセッション選択リストには`session.<slotId>.name`を表示します。未指定の場合は`slotId`を表示します。
 
 RHEL EC2で外部ブラウザから確認する場合は、`monitor.bindAddress: 0.0.0.0`を指定し、security groupで接続元IPを制限してください。認証なしのデモ機能のため、広く公開しないでください。
 

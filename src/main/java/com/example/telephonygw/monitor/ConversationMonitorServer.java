@@ -1,6 +1,7 @@
 package com.example.telephonygw.monitor;
 
 import com.example.telephonygw.config.GatewayConfig.MonitorConfig;
+import com.example.telephonygw.config.GatewayConfig.SessionSlotConfig;
 import com.example.telephonygw.logging.GatewayEventLogger;
 import com.example.telephonygw.session.CallSession;
 import com.example.telephonygw.session.CallSessionManager;
@@ -19,6 +20,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,14 +42,22 @@ public final class ConversationMonitorServer implements AutoCloseable {
     private final MonitorConfig config;
     private final ConversationEventHub eventHub;
     private final CallSessionManager sessionManager;
+    private final Map<String, String> sessionNames;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private HttpServer server;
     private ExecutorService executor;
 
-    public ConversationMonitorServer(MonitorConfig config, ConversationEventHub eventHub, CallSessionManager sessionManager) {
+    public ConversationMonitorServer(
+            MonitorConfig config,
+            ConversationEventHub eventHub,
+            CallSessionManager sessionManager,
+            List<SessionSlotConfig> sessionSlots
+    ) {
         this.config = config;
         this.eventHub = eventHub;
         this.sessionManager = sessionManager;
+        this.sessionNames = sessionSlots.stream()
+                .collect(Collectors.toUnmodifiableMap(SessionSlotConfig::slotId, SessionSlotConfig::name));
     }
 
     public void start() {
@@ -189,6 +200,7 @@ public final class ConversationMonitorServer implements AutoCloseable {
             CallSession session = sessions.get(i);
             json.append("{\"sessionId\":\"").append(json(session.sessionId())).append("\"")
                     .append(",\"slotId\":\"").append(json(session.slotId())).append("\"")
+                    .append(",\"name\":\"").append(json(sessionName(session.slotId()))).append("\"")
                     .append(",\"state\":\"").append(json(session.state().name().toLowerCase())).append("\"")
                     .append(",\"startedAt\":\"").append(json(TIMESTAMP_FORMATTER.format(session.startedAt()))).append("\"")
                     .append(",\"endedAt\":\"").append(json(formatInstant(session.endedAt()))).append("\"")
@@ -200,6 +212,10 @@ public final class ConversationMonitorServer implements AutoCloseable {
 
     private static String formatInstant(java.time.Instant instant) {
         return instant == null ? "" : TIMESTAMP_FORMATTER.format(instant);
+    }
+
+    private String sessionName(String slotId) {
+        return sessionNames.getOrDefault(slotId, slotId);
     }
 
     private static void appendEvents(StringBuilder json, List<ConversationEvent> events) {

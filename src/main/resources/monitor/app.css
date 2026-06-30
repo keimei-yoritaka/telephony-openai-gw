@@ -115,6 +115,7 @@ body {
   width: 100%;
   padding: 9px 10px;
   border: 1px solid rgba(216, 221, 214, 0.82);
+  border-left: 4px solid transparent;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.74);
   box-shadow: 0 6px 18px rgba(30, 42, 34, 0.10);
@@ -132,8 +133,14 @@ body {
 }
 
 .session-item.selected {
-  border-color: rgba(0, 94, 184, 0.70);
-  background: rgba(231, 247, 232, 0.86);
+  border-color: rgba(0, 94, 184, 0.82);
+  border-left-color: var(--brand);
+  background: rgba(218, 237, 255, 0.92);
+  box-shadow: 0 8px 22px rgba(0, 94, 184, 0.24);
+}
+
+.session-item.selected .session-slot {
+  color: var(--brand);
 }
 
 .session-item.unread::after {

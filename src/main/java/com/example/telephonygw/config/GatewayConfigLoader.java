@@ -43,6 +43,7 @@ public final class GatewayConfigLoader {
         String codec = optionalValue(values, prefix + "sip.codec", "PCMU").toUpperCase(Locale.ROOT);
         return new GatewayConfig.SessionSlotConfig(
                 slotId,
+                optionalValue(values, prefix + "name", slotId),
                 new GatewayConfig.SipConfig(
                         value(values, prefix + "sip.backend"),
                         value(values, prefix + "sip.bindAddress"),

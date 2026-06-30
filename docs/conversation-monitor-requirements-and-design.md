@@ -188,6 +188,7 @@ monitor:
 ただし認証なしのため、security groupでアクセス元IPを制限することを前提とする。
 
 `monitor.maxEvents`は会話イベント全体の保持数を制御する。`monitor.sessionHistoryDepth`はモニター画面右側のセッション選択リストに残す最近のセッション数を制御し、通話終了後もこの件数内であれば会話履歴を選択して確認できる。
+セッション選択リストには`session.<slotId>.name`を表示する。未指定の場合は`slotId`を表示名として扱う。
 
 ## UI設計案
 

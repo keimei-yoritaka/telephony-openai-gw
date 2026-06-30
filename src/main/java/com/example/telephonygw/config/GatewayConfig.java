@@ -17,6 +17,7 @@ public record GatewayConfig(
 
     public record SessionSlotConfig(
             String slotId,
+            String name,
             SipConfig sip,
             RegistrationConfig registration,
             OpenAiConfig openAi,
@@ -24,6 +25,7 @@ public record GatewayConfig(
     ) {
         public void validate() {
             require("session.slotId", slotId);
+            require("session." + slotId + ".name", name);
             sip.validate("session." + slotId + ".sip");
             registration.validate("session." + slotId + ".registration");
             openAi.validate("session." + slotId + ".openai");

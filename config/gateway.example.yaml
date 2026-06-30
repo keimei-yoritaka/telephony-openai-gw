@@ -2,6 +2,7 @@ gateway:
   sessionIds: session-1,session-2
 
 session.session-1:
+  name: 一番窓口
   sip.backend: placeholder
   sip.bindAddress: 0.0.0.0
   sip.port: 5070
@@ -32,6 +33,7 @@ session.session-1:
   bot.initialGreeting: "こちらは一番窓口です。ご用件をお話しください。"
 
 session.session-2:
+  name: 二番窓口
   sip.backend: placeholder
   sip.bindAddress: 0.0.0.0
   sip.port: 5072

@@ -94,6 +94,7 @@ gateway:
   sessionIds: session-1,session-2
 
 session.session-1:
+  name: 一番窓口
   sip.backend: pjsua2
   sip.bindAddress: 192.168.1.1
   sip.port: 6060
@@ -123,6 +124,7 @@ session.session-1:
   bot.initialGreeting: "こちらは一番窓口です。ご用件をお話しください。"
 
 session.session-2:
+  name: 二番窓口
   sip.backend: pjsua2
   sip.bindAddress: 192.168.1.1
   sip.port: 6062
@@ -163,6 +165,8 @@ monitor:
 ```
 
 この形式では、トップレベルに`gateway.sessionIds`を置き、各スロットを`session.<slotId>` sectionとして表現する。見た目は通常のYAML配列より少し冗長だが、既存scriptの手動`javac`起動を壊さずに済む。
+
+`session.<slotId>.name`はモニター画面に表示するセッション名として利用する。未指定の場合は`slotId`を表示名として扱う。
 
 ## 実装ステップ
 

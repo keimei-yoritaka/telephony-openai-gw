@@ -16,7 +16,8 @@ function setConnectionState(state) {
 }
 
 function setSessionLabel(sessionId) {
-  sessionLabel.textContent = `session: ${sessionId || "-"}`;
+  const session = activeSessions.get(sessionId);
+  sessionLabel.textContent = session ? session.name : "session: -";
 }
 
 function shortSessionId(sessionId) {
@@ -61,6 +62,7 @@ function renderEvent(event) {
   }
   rememberSession({
     sessionId: event.sessionId,
+    name: activeSessions.get(event.sessionId)?.name || activeSessions.get(event.sessionId)?.slotId || "session",
     slotId: activeSessions.get(event.sessionId)?.slotId || "session",
     state: activeSessions.get(event.sessionId)?.state || "active",
     startedAt: activeSessions.get(event.sessionId)?.startedAt || event.timestamp,
@@ -86,6 +88,7 @@ function rememberSession(session) {
   }
   activeSessions.set(session.sessionId, {
     sessionId: session.sessionId,
+    name: session.name || session.slotId || "session",
     slotId: session.slotId || "session",
     state: session.state || "active",
     startedAt: session.startedAt || "",
@@ -118,7 +121,7 @@ function renderSessionList() {
 
     const slot = document.createElement("span");
     slot.className = "session-slot";
-    slot.textContent = session.slotId || "session";
+    slot.textContent = session.name || session.slotId || "session";
 
     const id = document.createElement("span");
     id.className = "session-id-short";

@@ -30,7 +30,11 @@ public final class GatewayApp {
         this.sessionManager = new CallSessionManager(config.monitor().sessionHistoryDepth());
         this.audioBridge = new AudioBridge(config.media());
         this.conversationEventHub = new ConversationEventHub(config.monitor().maxEvents());
-        this.conversationMonitorServer = new ConversationMonitorServer(config.monitor(), conversationEventHub, sessionManager);
+        this.conversationMonitorServer = new ConversationMonitorServer(
+                config.monitor(),
+                conversationEventHub,
+                sessionManager,
+                config.sessions());
         this.realtimeClient = new RealtimeClient(
                 config.sessions(),
                 audioBridge,
@@ -50,8 +54,9 @@ public final class GatewayApp {
                 "sessionSlots", config.sessions().size());
         for (GatewayConfig.SessionSlotConfig sessionSlot : config.sessions()) {
             LOG.log(System.Logger.Level.INFO,
-                    "Configured session slot {0}: sipEndpoint={1}:{2}/{3}, openaiModel={4}, voice={5}",
+                    "Configured session slot {0} ({1}): sipEndpoint={2}:{3}/{4}, openaiModel={5}, voice={6}",
                     sessionSlot.slotId(),
+                    sessionSlot.name(),
                     sessionSlot.sip().bindAddress(),
                     sessionSlot.sip().port(),
                     sessionSlot.sip().transport(),
