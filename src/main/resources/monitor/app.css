@@ -34,7 +34,7 @@ body {
   grid-template-rows: auto 1fr;
   height: 100vh;
   min-height: 0;
-  width: min(512px, 100vw);
+  width: min(768px, 100vw);
   background: var(--bg);
 }
 
@@ -107,7 +107,7 @@ h1 {
 }
 
 .bubble {
-  max-width: min(680px, 78vw);
+  max-width: calc(100% * 2 / 3);
   padding: 10px 12px 7px;
   border-radius: 8px;
   box-shadow: 0 2px 6px rgba(30, 42, 34, 0.08);
@@ -158,6 +158,6 @@ h1 {
   }
 
   .bubble {
-    max-width: 86vw;
+    max-width: calc(100% * 2 / 3);
   }
 }
