@@ -158,6 +158,7 @@ logging:
 
 openai:
   cancelResponseOnUserSpeech: false
+  dropInputAudioWhileAssistantSpeaking: false
   bargeInMinSpeechMs: 600
   bargeInMinRmsDb: -35.0
   bargeInGraceMsAfterAssistantStarts: 500

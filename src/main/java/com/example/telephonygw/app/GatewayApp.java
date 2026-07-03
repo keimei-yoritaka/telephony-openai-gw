@@ -28,7 +28,7 @@ public final class GatewayApp {
     public GatewayApp(GatewayConfig config) {
         this.config = config;
         this.sessionManager = new CallSessionManager(config.monitor().sessionHistoryDepth());
-        this.audioBridge = new AudioBridge(config.media());
+        this.audioBridge = new AudioBridge(config.media(), config.openAi());
         this.conversationEventHub = new ConversationEventHub(config.monitor().maxEvents());
         this.conversationMonitorServer = new ConversationMonitorServer(
                 config.monitor(),

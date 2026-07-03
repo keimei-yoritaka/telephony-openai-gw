@@ -156,9 +156,9 @@ Queueは通話セッションごとに作成される。capacity値は全セッ�
 
 ### Inbound queue詳細
 
-`AudioBridge`は`inboundQueues[sessionId]`として通話セッションごとの`AudioQueue`を持つ。`Pjsua2AudioBridgePort.onFrameReceived`は20ms単位のPCM frameを`AudioFrame(direction=INBOUND)`として投入する。`RealtimeClient`は通話セッションごとにforwarding workerを起動し、`pollInbound(sessionId)`でframeを取り出す。
+`AudioBridge`は`inboundQueues[sessionId]`として通話セッションごとの`AudioQueue`を持つ。`Pjsua2AudioBridgePort.onFrameReceived`は20ms単位のPCM frameを`AudioFrame(direction=INBOUND)`として投入する。`openai.dropInputAudioWhileAssistantSpeaking`が`true`の場合、AI音声のRTP送話中はこの投入前に発信者音声を破棄する。`RealtimeClient`は通話セッションごとにforwarding workerを起動し、`pollInbound(sessionId)`でframeを取り出す。
 
-workerが取り出したframeは`RealtimeSession.appendInputAudio`でOpenAI向け24kHz PCMへresampleされ、`input_audio_buffer.append`として送信される。barge-in有効時は、この入力PCM frameのRMS音量を使ってAI応答キャンセル条件を評価する。
+workerが取り出したframeは`RealtimeSession.appendInputAudio`でOpenAI向け24kHz PCMへresampleされ、`input_audio_buffer.append`として送信される。`openai.dropInputAudioWhileAssistantSpeaking`が`true`の場合、queue投入済みframeであってもAI音声のRTP送話中に取り出されたものはOpenAIへ送らず破棄する。barge-in有効時は、この入力PCM frameのRMS音量を使ってAI応答キャンセル条件を評価する。
 
 ### Outbound queue詳細
 
@@ -209,10 +209,15 @@ AI音声送話中に発信者が話し始めた場合、設定によりAI音声�
 ```yaml
 openai:
   cancelResponseOnUserSpeech: true
+  dropInputAudioWhileAssistantSpeaking: false
   bargeInMinSpeechMs: 600
   bargeInMinRmsDb: -35.0
   bargeInGraceMsAfterAssistantStarts: 500
 ```
+
+`dropInputAudioWhileAssistantSpeaking`はbarge-inとは別の制御である。`true`の場合、AI音声をキャンセルせず、AI音声のRTP送話中に受けた発信者音声だけを破棄する。このため、AI発話中のユーザー音声がinbound queueやOpenAI側に蓄積されることを防げる一方で、AI発話中にユーザーが話した内容は会話コンテキストに入らない。
+
+`cancelResponseOnUserSpeech`と`dropInputAudioWhileAssistantSpeaking`が両方`true`の場合、AI音声のRTP送話中は入力破棄を優先する。破棄された音声はOpenAIへ届かないため、その期間のbarge-inキャンセル判定には使われない。
 
 ### 判定条件
 

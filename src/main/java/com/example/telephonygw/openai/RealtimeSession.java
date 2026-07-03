@@ -123,6 +123,7 @@ public final class RealtimeSession implements AutoCloseable {
                     "turnDetection", turnDetectionType,
                     "transcriptLoggingEnabled", transcriptLoggingEnabled,
                     "cancelResponseOnUserSpeech", runtimeConfig.cancelResponseOnUserSpeech(),
+                    "dropInputAudioWhileAssistantSpeaking", runtimeConfig.dropInputAudioWhileAssistantSpeaking(),
                     "bargeInMinSpeechMs", runtimeConfig.bargeInMinSpeechMs(),
                     "bargeInMinRmsDb", runtimeConfig.bargeInMinRmsDb(),
                     "bargeInGraceMsAfterAssistantStarts", runtimeConfig.bargeInGraceMsAfterAssistantStarts());
@@ -704,6 +705,7 @@ public final class RealtimeSession implements AutoCloseable {
             GatewayEventLogger.info(LOG, "openai_user_speech_started",
                     "sessionId", callSessionId,
                     "cancelResponseOnUserSpeech", runtimeConfig.cancelResponseOnUserSpeech(),
+                    "dropInputAudioWhileAssistantSpeaking", runtimeConfig.dropInputAudioWhileAssistantSpeaking(),
                     "responseWasActive", responseWasActive,
                     "bargeInCandidate", runtimeConfig.cancelResponseOnUserSpeech() && responseWasActive,
                     "bargeInMinSpeechMs", runtimeConfig.bargeInMinSpeechMs(),

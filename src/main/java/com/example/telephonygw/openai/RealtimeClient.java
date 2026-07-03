@@ -269,6 +269,16 @@ public final class RealtimeClient implements AutoCloseable {
             return;
         }
 
+        if (audioBridge.shouldDropInboundForAssistantSpeaking(frame.sessionId())) {
+            long skipped = skippedFrames.incrementAndGet();
+            if (skipped == 1 || skipped % 250 == 0) {
+                LOG.log(System.Logger.Level.DEBUG,
+                        "Skipped OpenAI input audio forwarding while assistant RTP playout is active: sessionId={0}, skippedFrames={1}",
+                        frame.sessionId(), skipped);
+            }
+            return;
+        }
+
         RealtimeSession session;
         try {
             session = sessionFor(frame.sessionId());

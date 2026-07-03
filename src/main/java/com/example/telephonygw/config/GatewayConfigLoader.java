@@ -27,6 +27,7 @@ public final class GatewayConfigLoader {
                 ),
                 new GatewayConfig.OpenAiRuntimeConfig(
                         booleanValue(values, "openai.cancelResponseOnUserSpeech", false),
+                        booleanValue(values, "openai.dropInputAudioWhileAssistantSpeaking", false),
                         intValue(values, "openai.bargeInMinSpeechMs", 600),
                         doubleValue(values, "openai.bargeInMinRmsDb", -35.0),
                         intValue(values, "openai.bargeInGraceMsAfterAssistantStarts", 500)

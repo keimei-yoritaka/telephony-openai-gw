@@ -115,16 +115,22 @@ grep 'CALL_TRANSCRIPT' apl.log
 
 `openai.cancelResponseOnUserSpeech: true`を指定すると、アプリがAI音声を送話中でも、発信者側の発話開始をOpenAI Realtime APIが検知した時点でAI音声の送出をキャンセルします。キャンセル時はRTP送信用のOutbound audio queueをクリアし、OpenAIへ`response.cancel`を送信します。
 
+`openai.dropInputAudioWhileAssistantSpeaking: true`を指定すると、アプリがAI音声をRTPへ送話している間は、発信者側の入力音声を破棄し、OpenAI Realtime APIへ`input_audio_buffer.append`を送信しません。AI発話中のユーザー音声を後段に溜めたくないデモでは、このモードを利用します。
+
 デフォルト値は`false`です。短い相づちや環境音でAI音声が止まりやすくなる副作用があるため、デモ内容に合わせて有効化してください。有効化した場合も、以下の条件を満たした場合だけキャンセルします。
+
+`cancelResponseOnUserSpeech`と`dropInputAudioWhileAssistantSpeaking`を両方`true`にした場合、AI音声のRTP送話中は入力破棄が優先されます。その期間の発信者音声はOpenAIへ届かないため、barge-inキャンセル判定の対象にもなりません。
 
 ```yaml
 openai:
   cancelResponseOnUserSpeech: true
+  dropInputAudioWhileAssistantSpeaking: false
   bargeInMinSpeechMs: 600
   bargeInMinRmsDb: -35.0
   bargeInGraceMsAfterAssistantStarts: 500
 ```
 
+- `dropInputAudioWhileAssistantSpeaking`: `true`の場合、AI音声のRTP送話中に受けた発信者音声をOpenAIへ送らず破棄する。
 - `bargeInMinSpeechMs`: `speech_started`後、この時間以上発話が継続してからキャンセル候補にする。
 - `bargeInMinRmsDb`: 入力PCMフレームのRMS音量がこの値以上の場合だけキャンセルする。
 - `bargeInGraceMsAfterAssistantStarts`: AI音声の送出開始直後、この時間内はキャンセルしない。

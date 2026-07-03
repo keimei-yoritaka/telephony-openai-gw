@@ -274,10 +274,13 @@ AI音声の送話中に発信者の発話開始を検知した時点でAI音声�
 ```yaml
 openai:
   cancelResponseOnUserSpeech: true
+  dropInputAudioWhileAssistantSpeaking: false
   bargeInMinSpeechMs: 600
   bargeInMinRmsDb: -35.0
   bargeInGraceMsAfterAssistantStarts: 500
 ```
+
+AI音声をキャンセルせず、AI音声の送話中に受けた発信者音声をOpenAIへ送らず破棄したい場合は、`dropInputAudioWhileAssistantSpeaking: true`を指定する。
 
 ```yaml
 monitor:

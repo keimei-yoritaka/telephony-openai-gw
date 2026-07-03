@@ -172,6 +172,7 @@ public record GatewayConfig(
 
     public record OpenAiRuntimeConfig(
             boolean cancelResponseOnUserSpeech,
+            boolean dropInputAudioWhileAssistantSpeaking,
             int bargeInMinSpeechMs,
             double bargeInMinRmsDb,
             int bargeInGraceMsAfterAssistantStarts

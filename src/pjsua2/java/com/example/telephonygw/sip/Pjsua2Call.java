@@ -184,6 +184,7 @@ final class Pjsua2Call extends Call {
         long outboundSilenceFrameCount = audioBridgePort.outboundSilenceFrameCount();
         long elapsedMillis = audioBridgePort.elapsedMillis();
         try {
+            audioBridgePort.closeBridge();
             audioBridgePort.delete();
         } catch (RuntimeException e) {
             LOG.log(System.Logger.Level.WARNING, "Failed to delete audio bridge port: {0}", e.getMessage());

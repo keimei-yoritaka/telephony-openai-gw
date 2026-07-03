@@ -78,6 +78,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
 
         if (!outboundPlaying) {
             outboundPlaying = true;
+            audioBridge.markOutboundPlayoutActive(sessionId);
             LOG.log(System.Logger.Level.INFO,
                     "Started outbound RTP audio playout: sessionId={0}, callId={1}, bufferedFrames={2}, outputComplete={3}",
                     sessionId, callId, depthBeforePoll, outboundComplete);
@@ -87,6 +88,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         byte[] payload;
         if (outbound == null) {
             outboundPlaying = false;
+            audioBridge.markOutboundPlayoutInactive(sessionId);
             if (outboundComplete) {
                 audioBridge.clearOutboundComplete(sessionId);
             }
@@ -133,6 +135,11 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             return 0L;
         }
         return Duration.ofNanos(System.nanoTime() - first).toMillis();
+    }
+
+    void closeBridge() {
+        outboundPlaying = false;
+        audioBridge.markOutboundPlayoutInactive(sessionId);
     }
 
     private static MediaFormatAudio mediaFormat(int sampleRateHz) {
