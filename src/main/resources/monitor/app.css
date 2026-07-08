@@ -286,6 +286,10 @@ body {
 }
 
 @media (max-width: 640px) {
+  .app-shell {
+    width: 100vw;
+  }
+
   .status-panel {
     top: 8px;
     right: 8px;
@@ -298,9 +302,37 @@ body {
   }
 
   .session-panel {
-    right: 8px;
-    bottom: 8px;
-    width: min(220px, calc(100vw - 16px));
+    top: 52px;
+    right: 0;
+    bottom: auto;
+    left: 0;
+    width: 100vw;
+    max-height: none;
+    padding: 0 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .session-list {
+    display: flex;
+    gap: 8px;
+    min-width: max-content;
+    padding: 0 0 8px;
+  }
+
+  .session-item {
+    flex: 0 0 156px;
+    min-height: 62px;
+    padding: 8px 9px;
+  }
+
+  .session-list-empty {
+    flex: 0 0 156px;
+    padding: 8px 9px;
+  }
+
+  .timeline {
+    padding: 126px 16px 24px;
   }
 
   .bubble {
