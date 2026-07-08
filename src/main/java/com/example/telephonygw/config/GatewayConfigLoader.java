@@ -79,6 +79,9 @@ public final class GatewayConfigLoader {
                         optionalValue(values, prefix + "openai.maxOutputTokens", "inf"),
                         optionalValue(values, prefix + "openai.turnDetectionType", "semantic_vad"),
                         optionalValue(values, prefix + "openai.turnDetectionEagerness", "low"),
+                        doubleValue(values, prefix + "openai.turnDetectionServerVadThreshold", 0.5),
+                        intValue(values, prefix + "openai.turnDetectionServerVadPrefixPaddingMs", 300),
+                        intValue(values, prefix + "openai.turnDetectionServerVadSilenceDurationMs", 800),
                         booleanValue(values, prefix + "openai.transcriptLoggingEnabled", true),
                         optionalValue(values, prefix + "openai.inputTranscriptionModel", "gpt-realtime-whisper"),
                         optionalValue(values, prefix + "openai.inputTranscriptionLanguage", "ja")

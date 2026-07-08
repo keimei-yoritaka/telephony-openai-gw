@@ -135,6 +135,24 @@ openai:
 - `bargeInMinRmsDb`: 入力PCMフレームのRMS音量がこの値以上の場合だけキャンセルする。
 - `bargeInGraceMsAfterAssistantStarts`: AI音声の送出開始直後、この時間内はキャンセルしない。
 
+## ユーザー発話区切りの調整
+
+通常はスロットごとの`openai.turnDetectionType: semantic_vad`と`openai.turnDetectionEagerness: low`を推奨します。`low`はOpenAI Realtime APIのsemantic VADで最もユーザー発話を待つ方向の設定です。
+
+それでも発話区切りが短い場合は、`server_vad`へ切り替えて無音判定時間を長くできます。
+
+```yaml
+session.session-1:
+  openai.turnDetectionType: server_vad
+  openai.turnDetectionServerVadThreshold: 0.5
+  openai.turnDetectionServerVadPrefixPaddingMs: 300
+  openai.turnDetectionServerVadSilenceDurationMs: 1200
+```
+
+- `turnDetectionServerVadThreshold`: 小さいほど音声検知が敏感になる。環境音で反応する場合は少し上げる。
+- `turnDetectionServerVadPrefixPaddingMs`: 発話開始前に含める音声の長さ。
+- `turnDetectionServerVadSilenceDurationMs`: 発話終了と判断する無音時間。ユーザーの間を待ちたい場合は長くする。
+
 ## 会話モニターUI
 
 `monitor.enabled: true`の場合、ブラウザから会話モニターを確認できます。

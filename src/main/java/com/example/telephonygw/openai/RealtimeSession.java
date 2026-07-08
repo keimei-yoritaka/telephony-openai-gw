@@ -37,6 +37,9 @@ public final class RealtimeSession implements AutoCloseable {
     private final String maxOutputTokens;
     private final String turnDetectionType;
     private final String turnDetectionEagerness;
+    private final double turnDetectionServerVadThreshold;
+    private final int turnDetectionServerVadPrefixPaddingMs;
+    private final int turnDetectionServerVadSilenceDurationMs;
     private final boolean transcriptLoggingEnabled;
     private final String inputTranscriptionModel;
     private final String inputTranscriptionLanguage;
@@ -69,6 +72,9 @@ public final class RealtimeSession implements AutoCloseable {
             String maxOutputTokens,
             String turnDetectionType,
             String turnDetectionEagerness,
+            double turnDetectionServerVadThreshold,
+            int turnDetectionServerVadPrefixPaddingMs,
+            int turnDetectionServerVadSilenceDurationMs,
             boolean transcriptLoggingEnabled,
             String inputTranscriptionModel,
             String inputTranscriptionLanguage,
@@ -85,6 +91,9 @@ public final class RealtimeSession implements AutoCloseable {
         this.maxOutputTokens = Objects.requireNonNull(maxOutputTokens, "maxOutputTokens");
         this.turnDetectionType = Objects.requireNonNull(turnDetectionType, "turnDetectionType");
         this.turnDetectionEagerness = Objects.requireNonNull(turnDetectionEagerness, "turnDetectionEagerness");
+        this.turnDetectionServerVadThreshold = turnDetectionServerVadThreshold;
+        this.turnDetectionServerVadPrefixPaddingMs = turnDetectionServerVadPrefixPaddingMs;
+        this.turnDetectionServerVadSilenceDurationMs = turnDetectionServerVadSilenceDurationMs;
         this.transcriptLoggingEnabled = transcriptLoggingEnabled;
         this.inputTranscriptionModel = Objects.requireNonNull(inputTranscriptionModel, "inputTranscriptionModel");
         this.inputTranscriptionLanguage = Objects.requireNonNull(inputTranscriptionLanguage, "inputTranscriptionLanguage");
@@ -121,6 +130,10 @@ public final class RealtimeSession implements AutoCloseable {
                     "inputRateHz", OPENAI_AUDIO_SAMPLE_RATE_HZ,
                     "maxOutputTokens", maxOutputTokens,
                     "turnDetection", turnDetectionType,
+                    "turnDetectionEagerness", turnDetectionEagerness,
+                    "turnDetectionServerVadThreshold", turnDetectionServerVadThreshold,
+                    "turnDetectionServerVadPrefixPaddingMs", turnDetectionServerVadPrefixPaddingMs,
+                    "turnDetectionServerVadSilenceDurationMs", turnDetectionServerVadSilenceDurationMs,
                     "transcriptLoggingEnabled", transcriptLoggingEnabled,
                     "cancelResponseOnUserSpeech", runtimeConfig.cancelResponseOnUserSpeech(),
                     "dropInputAudioWhileAssistantSpeaking", runtimeConfig.dropInputAudioWhileAssistantSpeaking(),
@@ -260,8 +273,11 @@ public final class RealtimeSession implements AutoCloseable {
                     """.formatted(json(turnDetectionEagerness), interruptResponse);
         }
         return """
-                {"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":800,"create_response":true,"interrupt_response":%s}\
-                """.formatted(interruptResponse);
+                {"type":"server_vad","threshold":%s,"prefix_padding_ms":%d,"silence_duration_ms":%d,"create_response":true,"interrupt_response":%s}\
+                """.formatted(Double.toString(turnDetectionServerVadThreshold),
+                turnDetectionServerVadPrefixPaddingMs,
+                turnDetectionServerVadSilenceDurationMs,
+                interruptResponse);
     }
 
     private void maybeCancelResponseForUserSpeech(byte[] pcm16, long nowNanos) {

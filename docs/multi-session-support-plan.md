@@ -117,6 +117,9 @@ session.session-1:
   openai.maxOutputTokens: inf
   openai.turnDetectionType: semantic_vad
   openai.turnDetectionEagerness: low
+  openai.turnDetectionServerVadThreshold: 0.5
+  openai.turnDetectionServerVadPrefixPaddingMs: 300
+  openai.turnDetectionServerVadSilenceDurationMs: 1200
   openai.transcriptLoggingEnabled: true
   openai.inputTranscriptionModel: gpt-realtime-whisper
   openai.inputTranscriptionLanguage: ja
@@ -147,6 +150,9 @@ session.session-2:
   openai.maxOutputTokens: inf
   openai.turnDetectionType: semantic_vad
   openai.turnDetectionEagerness: low
+  openai.turnDetectionServerVadThreshold: 0.5
+  openai.turnDetectionServerVadPrefixPaddingMs: 300
+  openai.turnDetectionServerVadSilenceDurationMs: 1200
   openai.transcriptLoggingEnabled: true
   openai.inputTranscriptionModel: gpt-realtime-whisper
   openai.inputTranscriptionLanguage: ja

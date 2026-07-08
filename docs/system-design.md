@@ -156,7 +156,7 @@ Queueは通話セッションごとに作成される。capacity値は全セッ�
 
 ### Inbound queue詳細
 
-`AudioBridge`は`inboundQueues[sessionId]`として通話セッションごとの`AudioQueue`を持つ。`Pjsua2AudioBridgePort.onFrameReceived`は20ms単位のPCM frameを`AudioFrame(direction=INBOUND)`として投入する。`openai.dropInputAudioWhileAssistantSpeaking`が`true`の場合、AI音声のRTP送話中はこの投入前に発信者音声を破棄する。`RealtimeClient`は通話セッションごとにforwarding workerを起動し、`pollInbound(sessionId)`でframeを取り出す。
+`AudioBridge`は`inboundQueues[sessionId]`として通話セッションごとの`AudioQueue`を持つ。`Pjsua2AudioBridgePort.onFrameReceived`は20ms単位のPCM frameを`AudioFrame(direction=INBOUND)`として投入する。`openai.dropInputAudioWhileAssistantSpeaking`が`true`の場合、AI音声のRTP送話中はこの投入前に発信者音声を破棄する。AI音声のRTP送話を開始した時点で、その時点までに残っている同一セッションのinbound queueも`clearInboundForAssistantSpeaking`で破棄する。`RealtimeClient`は通話セッションごとにforwarding workerを起動し、`pollInbound(sessionId)`でframeを取り出す。
 
 workerが取り出したframeは`RealtimeSession.appendInputAudio`でOpenAI向け24kHz PCMへresampleされ、`input_audio_buffer.append`として送信される。`openai.dropInputAudioWhileAssistantSpeaking`が`true`の場合、queue投入済みframeであってもAI音声のRTP送話中に取り出されたものはOpenAIへ送らず破棄する。barge-in有効時は、この入力PCM frameのRMS音量を使ってAI応答キャンセル条件を評価する。
 
@@ -183,6 +183,12 @@ OpenAI Realtime APIとの詳細なWebSocketイベント順序はdraw.ioの`OpenA
 ### Transcript
 
 発信者側は`conversation.item.input_audio_transcription.completed`、AI側は`response.output_audio_transcript.done`をもとにtranscriptをログと`ConversationEventHub`へ発行する。モニターUIはこのeventをSSEで受信する。
+
+### Turn Detection
+
+スロットごとの`openai.turnDetectionType`でOpenAI Realtime APIの発話区切り方式を選択する。通常は`semantic_vad`を使い、`openai.turnDetectionEagerness`で`auto`、`low`、`medium`、`high`を指定する。`low`はユーザー発話を長めに待つ方向の設定である。
+
+`server_vad`を使う場合は、`openai.turnDetectionServerVadThreshold`、`openai.turnDetectionServerVadPrefixPaddingMs`、`openai.turnDetectionServerVadSilenceDurationMs`を`session.update`の`turn_detection`へ渡す。ユーザーが少し間を置いたときにAI応答が早く始まりすぎる場合は、`turnDetectionServerVadSilenceDurationMs`を長くする。
 
 ### 主要Realtimeイベント
 

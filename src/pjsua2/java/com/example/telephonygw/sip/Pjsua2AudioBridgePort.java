@@ -79,9 +79,10 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         if (!outboundPlaying) {
             outboundPlaying = true;
             audioBridge.markOutboundPlayoutActive(sessionId);
+            int clearedInboundFrames = audioBridge.clearInboundForAssistantSpeaking(sessionId);
             LOG.log(System.Logger.Level.INFO,
-                    "Started outbound RTP audio playout: sessionId={0}, callId={1}, bufferedFrames={2}, outputComplete={3}",
-                    sessionId, callId, depthBeforePoll, outboundComplete);
+                    "Started outbound RTP audio playout: sessionId={0}, callId={1}, bufferedFrames={2}, outputComplete={3}, clearedInboundFrames={4}",
+                    sessionId, callId, depthBeforePoll, outboundComplete, clearedInboundFrames);
         }
 
         AudioFrame outbound = audioBridge.pollOutbound(sessionId);

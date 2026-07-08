@@ -113,6 +113,9 @@ public record GatewayConfig(
             String maxOutputTokens,
             String turnDetectionType,
             String turnDetectionEagerness,
+            double turnDetectionServerVadThreshold,
+            int turnDetectionServerVadPrefixPaddingMs,
+            int turnDetectionServerVadSilenceDurationMs,
             boolean transcriptLoggingEnabled,
             String inputTranscriptionModel,
             String inputTranscriptionLanguage
@@ -138,6 +141,20 @@ public record GatewayConfig(
                         prefix + ".turnDetectionType must be server_vad or semantic_vad: " + turnDetectionType);
             }
             require(prefix + ".turnDetectionEagerness", turnDetectionEagerness);
+            if (!Set.of("auto", "low", "medium", "high").contains(turnDetectionEagerness.toLowerCase())) {
+                throw new IllegalArgumentException(
+                        prefix + ".turnDetectionEagerness must be auto, low, medium, or high: "
+                                + turnDetectionEagerness);
+            }
+            if (turnDetectionServerVadThreshold < 0.0 || turnDetectionServerVadThreshold > 1.0) {
+                throw new IllegalArgumentException(
+                        prefix + ".turnDetectionServerVadThreshold must be between 0.0 and 1.0: "
+                                + turnDetectionServerVadThreshold);
+            }
+            requireRange(prefix + ".turnDetectionServerVadPrefixPaddingMs",
+                    turnDetectionServerVadPrefixPaddingMs, 0, 5000);
+            requireRange(prefix + ".turnDetectionServerVadSilenceDurationMs",
+                    turnDetectionServerVadSilenceDurationMs, 0, 10000);
             require(prefix + ".inputTranscriptionModel", inputTranscriptionModel);
         }
     }

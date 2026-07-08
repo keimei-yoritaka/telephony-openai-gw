@@ -135,6 +135,22 @@ public final class AudioBridge {
         return depth;
     }
 
+    public int clearInboundForAssistantSpeaking(String sessionId) {
+        if (!dropInputAudioWhileAssistantSpeaking) {
+            return 0;
+        }
+        int clearedFrames = clearInbound(sessionId);
+        if (clearedFrames > 0) {
+            LOG.log(System.Logger.Level.INFO,
+                    "Cleared inbound audio queue because assistant RTP playout started: sessionId={0}, clearedFrames={1}",
+                    sessionId, clearedFrames);
+            GatewayEventLogger.info(LOG, "inbound_audio_cleared_for_assistant_speech",
+                    "sessionId", sessionId,
+                    "clearedFrames", clearedFrames);
+        }
+        return clearedFrames;
+    }
+
     public void removeSessionQueues(String sessionId) {
         markOutboundPlayoutInactive(sessionId);
         clearOutboundComplete(sessionId);
