@@ -6,7 +6,9 @@ JavaアプリケーションからPJSUA2 Java bindingを利用し、SIP Registra
 
 ## 現在の状態
 
-- GitHub Repositoryは`telephony-openai-gw`としてprivateで管理しています。
+Stableバージョンは`v0.1.0`です。[リリースノート](docs/releases/v0.1.0.md)に機能と導入上の注意点を記載しています。
+
+- GitHub Repositoryは`telephony-openai-gw`として管理しています。
 - SIP backendは`placeholder`と`pjsua2`を設定で切り替えられます。
 - PJSUA2 backendでは、複数の固定セッションスロットごとにUDP transport、SIP Account、Registrationを作成します。
 - 各セッションスロットは最大1コールを受け付け、OpenAI Realtime sessionと1:1で紐付きます。
