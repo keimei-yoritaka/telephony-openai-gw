@@ -5,4 +5,9 @@ public interface ConversationEventPublisher {
     };
 
     void publishTranscript(String sessionId, String speaker, String itemId, String responseId, String text);
+    default void publishTranscriptSnapshot(String sessionId, String speaker, String segmentId, String sourceEventId,
+            String text, java.time.Instant timestamp, long startMs, long endMs) {
+    }
+
+    default java.util.List<ConversationEvent> recentTranscripts(String sessionId) { return java.util.List.of(); }
 }

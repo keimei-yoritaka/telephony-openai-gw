@@ -4,7 +4,9 @@ const connectionState = document.querySelector("#connection-state");
 const sessionList = document.querySelector("#session-list");
 const template = document.querySelector("#message-template");
 
-const renderedIds = new Set();
+const renderedSegments = new Map();
+const visibleEvents = new Map();
+let historyGeneration = 0;
 const activeSessions = new Map();
 let selectedSessionId = "";
 let eventSource = null;
@@ -40,19 +42,44 @@ function clearEmptyState() {
   }
 }
 
-function appendEventToTimeline(event) {
-  if (!event || renderedIds.has(event.id) || !event.text) {
-    return;
-  }
-  clearEmptyState();
+function eventKey(event) {
+  return event.segmentId ? `${event.sessionId}:${event.segmentId}` : `event:${event.id}`;
+}
 
-  const node = template.content.firstElementChild.cloneNode(true);
-  node.classList.add(event.speaker === "assistant" ? "assistant" : "caller");
+function appendEventToTimeline(event) {
+  if (!event || !event.text) return;
+  const key = eventKey(event);
+  const previous = visibleEvents.get(key);
+  if (previous && previous.id >= event.id) return;
+  visibleEvents.set(key, event);
+  clearEmptyState();
+  let node = renderedSegments.get(key);
+  if (!node) {
+    node = template.content.firstElementChild.cloneNode(true);
+    node.classList.add(event.speaker === "assistant" ? "assistant" : "caller");
+    timeline.append(node);
+    renderedSegments.set(key, node);
+  }
+  // Live events are full display snapshots, never deltas to append again.
   node.querySelector(".text").textContent = event.text;
   node.querySelector(".timestamp").textContent = formatTimestamp(event.timestamp);
-  timeline.append(node);
-  renderedIds.add(event.id);
   timeline.scrollTop = timeline.scrollHeight;
+}
+
+function replaceTimeline(events, sessionId) {
+  const merged = new Map();
+  for (const event of [...events, ...visibleEvents.values()]) {
+    if (event.sessionId !== sessionId) continue;
+    const key = eventKey(event);
+    if (!merged.has(key) || merged.get(key).id < event.id) merged.set(key, event);
+  }
+  timeline.replaceChildren();
+  renderedSegments.clear();
+  visibleEvents.clear();
+  for (const event of [...merged.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp) || a.id - b.id)) {
+    appendEventToTimeline(event);
+  }
+  renderEmptyState();
 }
 
 function renderEvent(event) {
@@ -138,12 +165,16 @@ function renderSessionList() {
 function selectSession(sessionId, options = {}) {
   const { loadHistory = true } = options;
   selectedSessionId = sessionId || "";
+  historyGeneration++;
+  timeline.replaceChildren();
+  visibleEvents.clear();
+  renderedSegments.clear();
   setSessionLabel(selectedSessionId);
   renderSessionList();
   if (loadHistory && selectedSessionId) {
+    const generation = historyGeneration;
     loadSessionHistory(selectedSessionId).catch(() => {
-      timeline.replaceChildren();
-      renderedIds.clear();
+      if (generation !== historyGeneration) return;
       renderEmptyState("履歴を取得できません");
     });
   }
@@ -162,34 +193,28 @@ function formatTimestamp(value) {
 }
 
 async function loadSessionHistory(sessionId) {
+  const generation = historyGeneration;
   const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`session history request failed: ${response.status}`);
   }
   const payload = await response.json();
-  timeline.replaceChildren();
-  renderedIds.clear();
-  for (const event of payload.events || []) {
-    appendEventToTimeline(event);
-  }
-  renderEmptyState();
+  if (generation !== historyGeneration || selectedSessionId !== sessionId) return;
+  replaceTimeline(payload.events || [], sessionId);
 }
 
 async function loadLatestHistory() {
+  const generation = historyGeneration;
   const response = await fetch("/api/sessions/latest", { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`history request failed: ${response.status}`);
   }
   const payload = await response.json();
+  if (generation !== historyGeneration) return;
   if (!selectedSessionId && payload.latestSessionId) {
     selectSession(payload.latestSessionId, { loadHistory: false });
   }
-  timeline.replaceChildren();
-  renderedIds.clear();
-  for (const event of payload.events || []) {
-    appendEventToTimeline(event);
-  }
-  renderEmptyState();
+  replaceTimeline(payload.events || [], selectedSessionId);
 }
 
 async function loadActiveSessions() {

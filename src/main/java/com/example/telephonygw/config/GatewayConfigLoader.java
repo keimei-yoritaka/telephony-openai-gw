@@ -74,7 +74,7 @@ public final class GatewayConfigLoader {
                 ),
                 new GatewayConfig.OpenAiConfig(
                         value(values, prefix + "openai.apiKey"),
-                        value(values, prefix + "openai.realtimeModel"),
+                        optionalValue(values, prefix + "openai.realtimeModel"),
                         optionalValue(values, prefix + "openai.voice", "shimmer"),
                         optionalValue(values, prefix + "openai.maxOutputTokens", "inf"),
                         optionalValue(values, prefix + "openai.turnDetectionType", "semantic_vad"),
@@ -84,7 +84,11 @@ public final class GatewayConfigLoader {
                         intValue(values, prefix + "openai.turnDetectionServerVadSilenceDurationMs", 800),
                         booleanValue(values, prefix + "openai.transcriptLoggingEnabled", true),
                         optionalValue(values, prefix + "openai.inputTranscriptionModel", "gpt-realtime-whisper"),
-                        optionalValue(values, prefix + "openai.inputTranscriptionLanguage", "ja")
+                        optionalValue(values, prefix + "openai.inputTranscriptionLanguage", "ja"),
+                        optionalValue(values, prefix + "openai.backend", "realtime").toLowerCase(Locale.ROOT),
+                        optionalValue(values, prefix + "openai.liveModel", "gpt-live-1"),
+                        optionalValue(values, prefix + "openai.liveVoice", "marin"),
+                        intValue(values, prefix + "openai.liveStartBufferFrames", 2)
                 ),
                 new GatewayConfig.BotConfig(
                         value(values, prefix + "bot.systemInstructions"),

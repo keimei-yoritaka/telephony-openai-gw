@@ -2,7 +2,7 @@
 
 SIP/RTPによる電話音声とOpenAIの音声Botを接続する軽量Gatewayを構築するプロジェクトです。
 
-JavaアプリケーションからPJSUA2 Java bindingを利用し、SIP Registration、UDP/IPv4のSIP/RTP、G.722/PCMU音声、OpenAI Realtime API連携を実装します。
+JavaアプリケーションからPJSUA2 Java bindingを利用し、SIP Registration、UDP/IPv4のSIP/RTP、G.722/PCMU音声、OpenAI Realtime API / GPT-Live連携を実装します。
 
 ## 現在の状態
 
@@ -11,10 +11,39 @@ Stableバージョンは`v0.1.0`です。[リリースノート](docs/releases/v
 - GitHub Repositoryは`telephony-openai-gw`として管理しています。
 - SIP backendは`placeholder`と`pjsua2`を設定で切り替えられます。
 - PJSUA2 backendでは、複数の固定セッションスロットごとにUDP transport、SIP Account、Registrationを作成します。
-- 各セッションスロットは最大1コールを受け付け、OpenAI Realtime sessionと1:1で紐付きます。
+- 各セッションスロットは最大1コールを受け付け、選択したRealtime / Live sessionと1:1で紐付きます。
 - OpenAI voice、system instructions、initial greetingはセッションスロットごとに設定できます。
 - inbound/outbound audio queueは通話セッションごとに分離し、capacityは`media`設定で共通値として指定できます。
 - OpenAIへのinbound音声転送workerは通話セッションごとに起動します。
+
+## ExperimentalのGPT-Live
+
+`codex/experimental`でGPT-Live単体の音声対話を追加しています。Responses delegation・業務tool連携はありません。既存Realtimeはbackend未指定で動作し、スロット別に`openai.backend: live`へ切り替えられます。
+
+```yaml
+session.session-2:
+  openai.backend: live
+  openai.apiKey: ${OPENAI_API_KEY}
+  openai.liveModel: gpt-live-1
+  openai.liveVoice: marin
+  openai.liveStartBufferFrames: 2
+```
+
+上記は追加設定の抜粋です。完全なPJSUA2混在設定例は[config/gateway.live.example.yaml](config/gateway.live.example.yaml)です。SIP接続先・passwordを実行設定に記載し、API keyを環境変数等から与えてください。既存Realtime専用のVAD・transcription model・maxOutputTokensはLiveには不要です。
+
+LiveはAI送話中も入力を継続します。`cancelResponseOnUserSpeech`と`dropInputAudioWhileAssistantSpeaking`はRealtimeスロットだけに適用されます。Liveは継続音声と逐次字幕を扱い、表示バブルの区切りはアプリ側の区切りです。
+
+```sh
+scripts/check-config.sh config/gateway.live.example.yaml
+scripts/check-voice.sh
+node src/test/js/monitor-check.cjs
+# 実環境値を指定したGit管理外設定で実通話を待ち受ける
+scripts/run-pjsua2-local.sh config/gateway.local.yaml
+```
+
+Live開始時の`openai_live_session_started`、RTP送出の`openai_live_playout`（queueMs、audioActive）、終了の`openai_live_session_closed`を確認できます。`openai_live_usage`は累積秒で、更新値を足し合わせません。Liveの音声費用はsession時間に基づくため、電話の待ち時間も含めて評価してください。[公式仕様](https://developers.openai.com/api/docs/guides/live-conversations)
+
+設定例の読み込み、オフラインsession/UIテスト、PJSUA2込みコンパイルを確認済みです。実API権限、音声疎通、日本語の自然さ、実通話、RHEL実機、ブラウザ外観は未検証です。[詳細計画](docs/gpt-live-implementation-plan.md)を参照してください。
 
 ## ローカル確認
 
@@ -32,7 +61,7 @@ scripts/check-config.sh
 scripts/run-local.sh
 ```
 
-`gradle`または`gradlew`が利用できる場合、`scripts/run-local.sh`はGradle経由で起動します。どちらも無い場合は、外部依存なしの範囲で`javac`によりcompileして起動します。
+`gradle`または`gradlew`が利用できる場合、`scripts/run-local.sh`はGradle経由で起動します。どちらも無い場合は、Gsonを`.deps/java`へ取得して`javac`によりcompileして起動します。初回取得にはMaven CentralへのHTTPS接続とcurl / opensslが必要です。
 
 `config/gateway.example.yaml`はplaceholder backendの複数スロット設定例です。PJSUA2を使う場合は`config/gateway.pjsua2.example.yaml`を雛形にして、スロットごとのSIP Registration情報とOpenAI API keyを実環境値に置き換えてください。
 

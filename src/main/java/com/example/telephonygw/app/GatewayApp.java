@@ -5,7 +5,7 @@ import com.example.telephonygw.logging.GatewayEventLogger;
 import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.monitor.ConversationEventHub;
 import com.example.telephonygw.monitor.ConversationMonitorServer;
-import com.example.telephonygw.openai.RealtimeClient;
+import com.example.telephonygw.openai.VoiceSessionManager;
 import com.example.telephonygw.session.CallSessionManager;
 import com.example.telephonygw.sip.PjsipEndpoint;
 
@@ -22,7 +22,7 @@ public final class GatewayApp {
     private final AudioBridge audioBridge;
     private final ConversationEventHub conversationEventHub;
     private final ConversationMonitorServer conversationMonitorServer;
-    private final RealtimeClient realtimeClient;
+    private final VoiceSessionManager voiceSessionManager;
     private final PjsipEndpoint sipEndpoint;
 
     public GatewayApp(GatewayConfig config) {
@@ -35,13 +35,13 @@ public final class GatewayApp {
                 conversationEventHub,
                 sessionManager,
                 config.sessions());
-        this.realtimeClient = new RealtimeClient(
+        this.voiceSessionManager = new VoiceSessionManager(
                 config.sessions(),
                 config.openAi(),
                 audioBridge,
                 conversationEventHub);
-        this.sessionManager.addCreateListener(realtimeClient::startSession);
-        this.sessionManager.addCloseListener(realtimeClient::closeSession);
+        this.sessionManager.addCreateListener(voiceSessionManager::startSession);
+        this.sessionManager.addCloseListener(voiceSessionManager::closeSession);
         this.sipEndpoint = new PjsipEndpoint(config.sessions(), config.logging(), sessionManager, audioBridge);
     }
 
@@ -55,20 +55,21 @@ public final class GatewayApp {
                 "sessionSlots", config.sessions().size());
         for (GatewayConfig.SessionSlotConfig sessionSlot : config.sessions()) {
             LOG.log(System.Logger.Level.INFO,
-                    "Configured session slot {0} ({1}): sipEndpoint={2}:{3}/{4}, openaiModel={5}, voice={6}",
+                    "Configured session slot {0} ({1}): sipEndpoint={2}:{3}/{4}, openaiModel={5}, voice={6}, backend={7}",
                     sessionSlot.slotId(),
                     sessionSlot.name(),
                     sessionSlot.sip().bindAddress(),
                     sessionSlot.sip().port(),
                     sessionSlot.sip().transport(),
-                    sessionSlot.openAi().realtimeModel(),
-                    sessionSlot.openAi().voice());
+                    sessionSlot.openAi().selectedModel(),
+                    sessionSlot.openAi().selectedVoice(),
+                    sessionSlot.openAi().backend());
         }
 
         conversationMonitorServer.start();
-        realtimeClient.initialize();
+        voiceSessionManager.initialize();
         audioBridge.initialize();
-        realtimeClient.startAudioForwarding();
+        voiceSessionManager.startAudioForwarding();
         sipEndpoint.start();
         sipEndpoint.register();
 
@@ -85,7 +86,7 @@ public final class GatewayApp {
         GatewayEventLogger.info(LOG, "gateway_stopping");
         sipEndpoint.stop();
         conversationMonitorServer.close();
-        realtimeClient.close();
+        voiceSessionManager.close();
         audioBridge.stop();
         sessionManager.closeAll("gateway_shutdown");
         shutdownLatch.countDown();

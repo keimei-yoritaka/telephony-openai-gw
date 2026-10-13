@@ -11,8 +11,17 @@ public record ConversationEvent(
         Instant timestamp,
         String itemId,
         String responseId,
-        boolean finalTranscript
+        boolean finalTranscript,
+        String segmentId,
+        String sourceEventId,
+        long sourceStartMs,
+        long sourceEndMs
 ) {
+    public ConversationEvent(long id, String sessionId, String speaker, String text, Instant timestamp,
+            String itemId, String responseId, boolean finalTranscript) {
+        this(id, sessionId, speaker, text, timestamp, itemId, responseId, finalTranscript, "", "", -1, -1);
+    }
+
     public ConversationEvent {
         if (id < 1L) {
             throw new IllegalArgumentException("id must be positive: " + id);
@@ -23,6 +32,8 @@ public record ConversationEvent(
         timestamp = Objects.requireNonNull(timestamp, "timestamp");
         itemId = itemId == null ? "" : itemId;
         responseId = responseId == null ? "" : responseId;
+        segmentId = segmentId == null ? "" : segmentId;
+        sourceEventId = sourceEventId == null ? "" : sourceEventId;
         if (!speaker.equals("caller") && !speaker.equals("assistant")) {
             throw new IllegalArgumentException("speaker must be caller or assistant: " + speaker);
         }

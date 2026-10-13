@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-public final class RealtimeSession implements AutoCloseable {
+public final class RealtimeSession implements VoiceSession {
     private static final System.Logger LOG = System.getLogger(RealtimeSession.class.getName());
     private static final URI REALTIME_ENDPOINT = URI.create("wss://api.openai.com/v1/realtime");
     private static final int OPENAI_AUDIO_SAMPLE_RATE_HZ = 24000;

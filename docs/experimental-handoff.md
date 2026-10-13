@@ -2,6 +2,15 @@
 
 作成日: 2026-10-13
 
+## GPT-Live追加の追記（2026-10-13）
+
+- ユーザーがGPT-Live追加計画を承認し、delegationと業務tool連携を対象外に指定した。
+- スロット別`realtime / live`、`VoiceSessionManager`、Live音声・transcript・モニター対応を追加した。詳細は[実装計画](gpt-live-implementation-plan.md)と現行設計書を参照する。
+- `config/gateway.live.example.yaml`はPJSUA2のRealtime / Live混在設定例。実行設定・credentialは変更していない。
+- Gson jarはGit管理外の`.deps/java`へ再現取得する。起動・設定check scriptもclasspathに反映済み。
+- オフライン検証済み。実API・実通話・RHEL実機・ブラウザ外観は未検証。
+- 以下の開始地点はExperimental着手前の記録であり、現行コードとは区別する。
+
 ## 開始地点
 
 - Repository: https://github.com/keimei-yoritaka/telephony-openai-gw

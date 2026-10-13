@@ -12,9 +12,10 @@ if command -v gradle >/dev/null 2>&1; then
 fi
 
 BUILD_DIR="build/classes"
+JAVA_DEPS="$(sh scripts/java-deps-classpath.sh)"
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
 find src/main/java -name '*.java' > build/sources.list
-javac -encoding UTF-8 -d "${BUILD_DIR}" @build/sources.list
-exec java -cp "${BUILD_DIR}" com.example.telephonygw.Main --config "${CONFIG_PATH}"
+javac -encoding UTF-8 -cp "${JAVA_DEPS}" -d "${BUILD_DIR}" @build/sources.list
+exec java -cp "${BUILD_DIR}:${JAVA_DEPS}" com.example.telephonygw.Main --config "${CONFIG_PATH}"
 

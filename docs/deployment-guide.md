@@ -7,7 +7,7 @@
 - 開発・検証環境: macOS
 - 顧客向けデモ環境: RHEL 8.10
 
-SIP/RTP、PJSUA2 Java binding、OpenAI Realtime APIの基本構成は両環境で同一とし、OS差分はnative library build、service管理、firewall設定に閉じ込める。
+SIP/RTP、PJSUA2 Java binding、OpenAI Realtime API / GPT-Liveの基本構成は両環境で同一とし、OS差分はnative library build、service管理、firewall設定に閉じ込める。
 
 ## 共通モジュール構成
 
@@ -402,3 +402,23 @@ RHELではsystemd/journaldでstdout/stderrを集約する。PJSIP nativeログ�
   https://docs.pjsip.org/en/2.15.1/pjsua2/building.html
 - PJSIP Documentation: Build Instructions with GNU Build Systems  
   https://docs.pjsip.org/en/2.17/get-started/posix/build_instructions.html
+
+## ExperimentalのGPT-Liveを導入する場合
+
+`codex/experimental`のソースとscriptを更新し、`config/gateway.live.example.yaml`のLive項目をGit管理外の実行設定へ反映する。既存RealtimeとLiveはスロット別に混在できる。SIP/RTPやnative libraryのbuild方式は共通で、macOS native成果物をRHELへコピーしない。
+
+直接javacする起動・設定確認scriptはGson 2.13.2を必要とする。サービス起動前にRepositoryのルートで以下を実行し、実行ユーザーがjarを読めることを確認する。
+
+```sh
+sh scripts/java-deps-classpath.sh
+scripts/check-config.sh config/gateway.live.example.yaml
+scripts/check-voice.sh
+```
+
+初回のjar取得にはcurl、openssl、Maven CentralへのHTTPS接続、`.deps/java`への書き込み権限が必要。ネットワークを閉じた環境では、このscriptで取得・checksum確認したjarを同じ`.deps/java`へ事前配置する。Gradle経由ではMaven Centralの依存解決を使用する。jarやcredentialはcommitしない。
+
+音声側は既存SIP接続と同じで、OpenAI側へ`wss://api.openai.com/v1/live/sessions`の通信を許可する。Liveのmodel / voice / 利用権限は実APIで確認する。Responses backendや業務toolの設定は不要。
+
+通常起動は従来と同じ`run-pjsua2-local.sh`を使う。`run-pjsua2-startup-check.sh`は実通話待ち受け用ではない。Liveは通話終了時に非同期で終了確認を行い、`session.closed`未受信時には最終usage未確認をログに残す。
+
+この更新のRHEL実機・実通話は未検証。設定check、native込みコンパイル、接続確認、単独通話、同時通話の順で検証する。

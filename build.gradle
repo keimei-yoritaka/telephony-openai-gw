@@ -18,3 +18,21 @@ application {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
+
+dependencies { implementation 'com.google.code.gson:gson:2.13.2' }
+
+sourceSets {
+    voiceCheck {
+        java.srcDir 'src/check/java'
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+configurations { voiceCheckImplementation.extendsFrom implementation }
+
+tasks.register('checkVoice', JavaExec) {
+    dependsOn voiceCheckClasses
+    classpath = sourceSets.voiceCheck.runtimeClasspath
+    mainClass = 'com.example.telephonygw.openai.VoiceIntegrationCheck'
+}
+tasks.named('check') { dependsOn 'checkVoice' }

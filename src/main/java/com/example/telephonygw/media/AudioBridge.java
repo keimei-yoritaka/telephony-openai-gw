@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class AudioBridge {
     private static final System.Logger LOG = System.getLogger(AudioBridge.class.getName());
 
+    private final Object lifecycleLock = new Object();
+    private final Set<String> activeAudioSessions = ConcurrentHashMap.newKeySet();
     private final int inboundQueueCapacity;
     private final int outboundQueueCapacity;
     private final boolean dropInputAudioWhileAssistantSpeaking;
@@ -21,6 +23,8 @@ public final class AudioBridge {
     private final Map<String, AudioQueue> inboundQueues = new ConcurrentHashMap<>();
     private final Map<String, AudioQueue> outboundQueues = new ConcurrentHashMap<>();
     private final Map<String, Integer> sessionSampleRates = new ConcurrentHashMap<>();
+    private final Map<String, Long> liveLastAudioNanos = new ConcurrentHashMap<>();
+    private final Map<String, Integer> liveStartBuffers = new ConcurrentHashMap<>();
     private final Set<String> outboundPlayoutSessions = ConcurrentHashMap.newKeySet();
     private final Set<String> outboundCompleteSessions = ConcurrentHashMap.newKeySet();
     private final AtomicLong inboundSequence = new AtomicLong();
@@ -32,6 +36,25 @@ public final class AudioBridge {
         this.outboundQueueCapacity = config.outboundQueueCapacity();
         this.dropInputAudioWhileAssistantSpeaking = openAiRuntimeConfig.dropInputAudioWhileAssistantSpeaking();
     }
+
+    public void configureSessionBackend(String sessionId, boolean live, int startBufferFrames) {
+        synchronized (lifecycleLock) {
+            activeAudioSessions.add(sessionId);
+            if (live) liveStartBuffers.put(sessionId, startBufferFrames);
+            else liveStartBuffers.remove(sessionId);
+        }
+    }
+
+    public void markLiveAudioReceived(String sessionId, long nowNanos) { liveLastAudioNanos.put(sessionId, nowNanos); }
+
+    public boolean isLiveOutputQuiet(String sessionId) {
+        Long last = liveLastAudioNanos.get(sessionId);
+        return last != null && System.nanoTime() - last > 100_000_000L;
+    }
+
+    public boolean isLiveSession(String sessionId) { return liveStartBuffers.containsKey(sessionId); }
+
+    public int outboundStartBufferFrames(String sessionId) { return liveStartBuffers.getOrDefault(sessionId, 8); }
 
     public void initialize() {
         if (initialized.compareAndSet(false, true)) {
@@ -46,6 +69,13 @@ public final class AudioBridge {
     }
 
     public boolean enqueueInboundPcm16(String sessionId, byte[] payload, int sampleRateHz, int durationMs) {
+        synchronized (lifecycleLock) {
+            if (!activeAudioSessions.contains(sessionId)) return false;
+            return enqueueInboundActive(sessionId, payload, sampleRateHz, durationMs);
+        }
+    }
+
+    private boolean enqueueInboundActive(String sessionId, byte[] payload, int sampleRateHz, int durationMs) {
         if (shouldDropInboundForAssistantSpeaking(sessionId)) {
             long dropped = inboundDroppedWhileAssistantSpeaking.incrementAndGet();
             if (dropped == 1 || dropped % 250 == 0) {
@@ -68,6 +98,13 @@ public final class AudioBridge {
     }
 
     public boolean enqueueOutboundPcm16(String sessionId, byte[] payload, int sampleRateHz, int durationMs) {
+        synchronized (lifecycleLock) {
+            if (!activeAudioSessions.contains(sessionId)) return false;
+            return enqueueOutboundActive(sessionId, payload, sampleRateHz, durationMs);
+        }
+    }
+
+    private boolean enqueueOutboundActive(String sessionId, byte[] payload, int sampleRateHz, int durationMs) {
         AudioFrame frame = new AudioFrame(
                 sessionId,
                 AudioFrame.Direction.OUTBOUND,
@@ -136,7 +173,7 @@ public final class AudioBridge {
     }
 
     public int clearInboundForAssistantSpeaking(String sessionId) {
-        if (!dropInputAudioWhileAssistantSpeaking) {
+        if (!dropInputAudioWhileAssistantSpeaking || isLiveSession(sessionId)) {
             return 0;
         }
         int clearedFrames = clearInbound(sessionId);
@@ -152,8 +189,17 @@ public final class AudioBridge {
     }
 
     public void removeSessionQueues(String sessionId) {
+        synchronized (lifecycleLock) {
+            activeAudioSessions.remove(sessionId);
+            removeSessionQueuesActive(sessionId);
+        }
+    }
+
+    private void removeSessionQueuesActive(String sessionId) {
         markOutboundPlayoutInactive(sessionId);
         clearOutboundComplete(sessionId);
+        liveLastAudioNanos.remove(sessionId);
+        liveStartBuffers.remove(sessionId);
         inboundQueues.remove(sessionId);
         outboundQueues.remove(sessionId);
     }
@@ -183,7 +229,7 @@ public final class AudioBridge {
     }
 
     public boolean shouldDropInboundForAssistantSpeaking(String sessionId) {
-        return dropInputAudioWhileAssistantSpeaking && isOutboundPlayoutActive(sessionId);
+        return !isLiveSession(sessionId) && dropInputAudioWhileAssistantSpeaking && isOutboundPlayoutActive(sessionId);
     }
 
     public boolean isOutboundComplete(String sessionId) {
@@ -228,8 +274,13 @@ public final class AudioBridge {
                     "outboundOffered", outboundOffered,
                     "outboundDropped", outboundDropped,
                     "outboundDepth", outboundDepth);
-            inboundQueues.clear();
-            outboundQueues.clear();
+            synchronized (lifecycleLock) {
+                activeAudioSessions.clear();
+                liveStartBuffers.clear();
+                liveLastAudioNanos.clear();
+                inboundQueues.clear();
+                outboundQueues.clear();
+            }
             outboundPlayoutSessions.clear();
             outboundCompleteSessions.clear();
         }

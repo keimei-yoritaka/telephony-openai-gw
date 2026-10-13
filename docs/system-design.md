@@ -2,7 +2,7 @@
 
 ## 目的
 
-本書は、`telephony-openai-gw`の現行実装を後から追跡・変更できるように整理した設計ドキュメントである。SIP/RTP、OpenAI Realtime API、会話モニターUI、マルチセッション制御、デプロイ構成を対象とする。
+本書は、`telephony-openai-gw`の現行実装を後から追跡・変更できるように整理した設計ドキュメントである。SIP/RTP、OpenAI Realtime API / GPT-Live、会話モニターUI、マルチセッション制御、デプロイ構成を対象とする。
 
 仕様変更時は、実装・設定例・運用手順に加えて、本書とdraw.io図も同じ変更単位で更新する。
 
@@ -19,10 +19,11 @@ draw.ioで編集できる図は以下に格納する。
 - `Class Overview`: 主要クラスと責務の関係
 - `Audio Queue Detail`: inbound queue / outbound queueと音声処理の詳細
 - `OpenAI Realtime Sequence`: OpenAI Realtime APIとのWebSocketイベントシーケンス
+- `OpenAI Live Sequence`: GPT-Liveの開始、音声、transcript、終了シーケンス
 
 ## スコープ
 
-本Gatewayは、SIP/RTP電話音声とOpenAI Realtime APIを接続する軽量なJavaアプリケーションである。PBX機能は持たず、設定された複数の固定セッションスロットごとにSIP UASとしてINVITEを受け、通話ごとにOpenAI Realtime sessionを作成する。
+本Gatewayは、SIP/RTP電話音声とOpenAI Realtime API / GPT-Liveを接続する軽量なJavaアプリケーションである。PBX機能は持たず、設定された複数の固定セッションスロットごとにSIP UASとしてINVITEを受け、通話ごとに設定されたbackendのOpenAI voice sessionを作成する。
 
 ### 対象
 
@@ -30,7 +31,7 @@ draw.ioで編集できる図は以下に格納する。
 - UDP/IPv4によるSIP/RTP待ち受け
 - PJSUA2 Java bindingによるSIP/RTP制御
 - PCMU/G.722のSIP SDP offer/answerとPCM音声ブリッジ
-- OpenAI Realtime APIへの音声転送と音声応答受信
+- OpenAI Realtime API / GPT-Liveへの音声転送と音声応答受信
 - 通話セッションごとの音声キュー分離
 - 会話transcriptログとブラウザモニターUI
 - RHEL 8.10およびmacOSでの稼働
@@ -51,9 +52,9 @@ flowchart LR
   Registrar["SIP Registrar"] <-->|"REGISTER / rport"| PJSIP
   PJSIP --> Session["CallSessionManager"]
   PJSIP <-->|"PCM frames"| Audio["AudioBridge"]
-  Audio -->|"Inbound PCM"| Realtime["RealtimeClient / RealtimeSession"]
+  Audio -->|"Inbound PCM"| Realtime["VoiceSessionManager / RealtimeSession / LiveSession"]
   Realtime -->|"Outbound PCM"| Audio
-  Realtime <-->|"WebSocket audio/events"| OpenAI["OpenAI Realtime API"]
+  Realtime <-->|"WebSocket audio/events"| OpenAI["OpenAI Realtime API / GPT-Live"]
   Realtime --> MonitorHub["ConversationEventHub"]
   MonitorHub --> Monitor["ConversationMonitorServer"]
   Browser["Browser"] <-->|"HTTP / SSE"| Monitor
@@ -72,8 +73,11 @@ flowchart LR
 | `Pjsua2AudioBridgePort` | PJSUA2 conference bridgeと`AudioBridge`間のPCM入出力 |
 | `CallSessionManager` | 通話セッション生成・終了・最近のセッション履歴保持 |
 | `AudioBridge` | セッション別inbound/outbound audio queueとsample rate保持 |
-| `RealtimeClient` | セッション別OpenAI Realtime sessionの生成、音声転送worker管理 |
+| `VoiceSessionManager` | スロット別backendの選択、voice sessionの生成、音声転送worker・再試行管理 |
+| `VoiceSession` | Realtime / Live共通のsession lifecycle interface |
 | `RealtimeSession` | OpenAI Realtime WebSocket、音声送受信、transcript、barge-in制御 |
+| `LiveSession` | GPT-Live primary WebSocket、音声対話、挨拶、transcript、usage、終了確認 |
+| `LiveAudioDecoder` / `LiveTranscriptAssembler` | PCM delta境界の保持、話者別の表示segment集約 |
 | `ConversationEventHub` | 会話transcript eventの保持とSSE subscriber通知 |
 | `ConversationMonitorServer` | ブラウザ向けHTTP/SSE APIと静的asset配信 |
 
@@ -103,7 +107,7 @@ session.session-2:
 - 1スロットにつき同時通話は最大1件。
 - 同一スロットで通話中にINVITEを受けた場合は`486 Busy Here`を返す。
 - スロット間は独立しており、複数スロットの同時通話は可能。
-- SIP側セッションとOpenAI Realtime sessionは1:1で対応する。
+- SIP側セッションと選択したOpenAI voice sessionは1:1で対応する。
 
 ## SIP/RTP設計
 
@@ -133,7 +137,7 @@ G.722はRTP clock上は`G722/8000`として表現されるが、PJSIP media brid
 
 1. `Pjsua2AudioBridgePort.onFrameReceived`がPJSUA2からPCM frameを受け取る。
 2. `AudioBridge.enqueueInboundPcm16`で通話セッション別inbound queueへ投入する。
-3. `RealtimeClient`のセッション別forwarding workerがinbound queueをpollする。
+3. `VoiceSessionManager`のセッション別forwarding workerがinbound queueをpollする。
 4. `RealtimeSession.appendInputAudio`がOpenAI Realtime APIの24kHz PCMへresampleし、`input_audio_buffer.append`を送信する。
 
 ### Outbound
@@ -156,15 +160,15 @@ Queueは通話セッションごとに作成される。capacity値は全セッ�
 
 ### Inbound queue詳細
 
-`AudioBridge`は`inboundQueues[sessionId]`として通話セッションごとの`AudioQueue`を持つ。`Pjsua2AudioBridgePort.onFrameReceived`は20ms単位のPCM frameを`AudioFrame(direction=INBOUND)`として投入する。`openai.dropInputAudioWhileAssistantSpeaking`が`true`の場合、AI音声のRTP送話中はこの投入前に発信者音声を破棄する。AI音声のRTP送話を開始した時点で、その時点までに残っている同一セッションのinbound queueも`clearInboundForAssistantSpeaking`で破棄する。`RealtimeClient`は通話セッションごとにforwarding workerを起動し、`pollInbound(sessionId)`でframeを取り出す。
+`AudioBridge`は`inboundQueues[sessionId]`として通話セッションごとの`AudioQueue`を持つ。`Pjsua2AudioBridgePort.onFrameReceived`は20ms単位のPCM frameを`AudioFrame(direction=INBOUND)`として投入する。`openai.dropInputAudioWhileAssistantSpeaking`が`true`の場合、AI音声のRTP送話中はこの投入前に発信者音声を破棄する。AI音声のRTP送話を開始した時点で、その時点までに残っている同一セッションのinbound queueも`clearInboundForAssistantSpeaking`で破棄する。`VoiceSessionManager`は通話セッションごとにforwarding workerを起動し、`pollInbound(sessionId)`でframeを取り出す。
 
 workerが取り出したframeは`RealtimeSession.appendInputAudio`でOpenAI向け24kHz PCMへresampleされ、`input_audio_buffer.append`として送信される。`openai.dropInputAudioWhileAssistantSpeaking`が`true`の場合、queue投入済みframeであってもAI音声のRTP送話中に取り出されたものはOpenAIへ送らず破棄する。barge-in有効時は、この入力PCM frameのRMS音量を使ってAI応答キャンセル条件を評価する。
 
 ### Outbound queue詳細
 
-OpenAIから受け取った`response.output_audio.delta`は`RealtimeSession.queueOutputAudio`でdecodeされ、通話のRTP sample rateへdownsampleされる。生成した20ms PCM frameは`AudioFrame(direction=OUTBOUND)`として`outboundQueues[sessionId]`へ投入する。
+Realtime backendでOpenAIから受け取った`response.output_audio.delta`は`RealtimeSession.queueOutputAudio`でdecodeされ、通話のRTP sample rateへdownsampleされる。生成した20ms PCM frameは`AudioFrame(direction=OUTBOUND)`として`outboundQueues[sessionId]`へ投入する。
 
-`Pjsua2AudioBridgePort.onFrameRequested`はPJSUA2からの送話要求ごとに`pollOutbound(sessionId)`する。再生開始時は`OUTBOUND_START_BUFFER_FRAMES=8`を下回る場合にsilenceを返し、短いbufferを作ってから再生を開始する。queueが空の場合もsilence frameを返す。
+`Pjsua2AudioBridgePort.onFrameRequested`はPJSUA2からの送話要求ごとに`pollOutbound(sessionId)`する。Realtime backendの再生開始時は8 frameを下回る場合にsilenceを返し、短いbufferを作ってから再生を開始する。queueが空の場合もsilence frameを返す。
 
 `RealtimeSession`がOpenAI応答完了を検知すると`markOutboundComplete(sessionId)`を呼び、`Pjsua2AudioBridgePort`はqueueが空になった時点で再生状態を終了する。barge-in条件を満たした場合は`clearOutbound(sessionId)`で未送話のAI音声を破棄する。
 
@@ -174,7 +178,7 @@ OpenAI Realtime APIとの詳細なWebSocketイベント順序はdraw.ioの`OpenA
 
 ### Session生成
 
-`CallSessionManager.createSession`のlistenerとして`RealtimeClient.startSession`が呼ばれる。`RealtimeClient`は通話セッションIDに対応する`RealtimeSession`を作成し、WebSocket接続後に`session.update`を送信する。
+`CallSessionManager.createSession`のlistenerとして`VoiceSessionManager.startSession`が呼ばれる。`VoiceSessionManager`は通話セッションIDに対応する`RealtimeSession`を作成し、WebSocket接続後に`session.update`を送信する。
 
 ### 初回挨拶
 
@@ -208,7 +212,45 @@ OpenAI Realtime APIとの詳細なWebSocketイベント順序はdraw.ioの`OpenA
 | OpenAI -> Gateway | `response.done` | 応答完了、遅延、queue深さなどをログ出力する。 |
 | Gateway -> OpenAI | `response.cancel` | barge-in条件成立時に送信し、未送話AI音声を破棄する。 |
 
-## Barge-in制御
+## GPT-Live backend設計
+
+`session.<slotId>.openai.backend`で`realtime`（未指定時）と`live`を選択する。Liveのmodel、voice、再生開始bufferは`openai.liveModel`、`openai.liveVoice`、`openai.liveStartBufferFrames`で指定する。既定は`gpt-live-1`、`marin`、2 frame（40ms）。`config/gateway.live.example.yaml`はRealtime / Live混在のPJSUA2設定例である。
+
+### 音声とsession lifecycle
+
+`LiveSession`は`wss://api.openai.com/v1/live/sessions`へ接続し、`session.start`でmono PCM16LE / 24kHz、instructions、voice、`store: false`を設定する。`session.started`を確認するまで音声を送らず、通話別inbound queueで保持する。開始失敗はtimeoutを含めて再試行管理へ通知する。
+
+入力は`session.input_audio.append`、出力は`session.output_audio.delta`。`LiveAudioDecoder`がdelta境界に跨るPCMを保持し、24kHzの20ms frameを組み立てた後に通話sample rateへ変換する。60ms以上の出力gapでは端数frameを無音paddingして送る。奇数byteの残りは次のdeltaに保持する。
+
+Liveには発話ごとの生成完了通知がない。既定2 frameの開始bufferを使い、最後のdeltaから100ms以上経過した場合は短い残りframeも再生する。queue空を実再生状態の区切りとして扱い、発話完了を意味するeventは作らない。queue滞留時間とPCM音声活動の目安をRTP送出側で計測する。
+
+Liveは通話終了まで接続を保持し、Realtimeの15秒idle closeは適用しない。通信失敗の再接続では新sessionを作り、Hubに残る最近のテキストを最大20件・計2000文字まで`session.input`で渡す。完全な会話・音声文脈の復元は保証しない。再接続で古いaudio queueを破棄し、初回挨拶は通話ごとに一度とする。
+
+終了は別workerで`session.close`を送り、最大15秒で`session.closed`と最終累積usage秒を確認する。確認前にtransportが切れた場合は最終usage未確認として記録する。開始中の通話終了も検知し、遅れて接続したsessionを登録しない。
+
+### 会話方針・delegation
+
+今回のLive backendは音声会話のみを扱い、Responses backendや業務toolへ接続しない。APIではdelegation省略時もclientモードになるが、アプリは委譲処理を実行しない。instructionsで委譲・検索・操作を行わない方針を指定し、想定外の`session.delegation.created`には、この窓口では実行できない旨だけを返す。
+
+初回挨拶は`session.started`後に`session.instructions.append`で要求する。LiveへRealtimeのVAD、`response.create`、`response.cancel`は送らない。AI送話中も利用者音声を送るため、Liveスロットには`dropInputAudioWhileAssistantSpeaking`と従来barge-in閾値を適用しない。短い相づちだけでoutbound queueを破棄する処理も入れない。
+
+### transcriptとモニター
+
+`session.input_transcript.delta` / `session.output_transcript.delta`を話者別に集約する。空白と繰り返しを保持し、表示segmentの境界は話者別gapが1秒超、時間幅4秒以上、追加後512文字超を目安とする。APIの確定ターンとしては扱わず`final: false`とする。
+
+表示用の`segmentId`、APIの`sourceEventId`、`sourceStartMs` / `sourceEndMs`を保持する。Realtimeの`itemId` / `responseId`へ表示IDを流用しない。Hubは同じsegmentの最新全文snapshotへ置換し、UIも同様に更新する。HTTP履歴取得とSSE更新の競合ではevent IDが新しいsnapshotを採用する。
+
+`CALL_TRANSCRIPT`はLiveのdeltaとして記録する。AI字幕は生成された文字であり、利用者へ再生済みの証明には使わない。
+
+### queue lifecycleと依存
+
+`AudioBridge.configureSessionBackend`で通話の音声処理を有効化する。終了時に登録とqueueを同じlockで除き、遅れたcallbackによるqueue再生成を拒否する。Liveは最大100件のWebSocket送信待ちと5秒send timeoutを持つ。overflowや通信失敗はsessionを停止して再試行管理へ通知する。
+
+Live JSONの解釈にGson 2.13.2を使用する。GradleはMaven Centralを利用し、直接javacするscriptは`java-deps-classpath.sh`でSHA-256確認済みjarを`.deps/java`へ取得する。jarはGit管理外。
+
+公式仕様: [Live primary WebSocket](https://developers.openai.com/api/reference/resources/live/primary-websocket)、[Managing sessions](https://developers.openai.com/api/docs/guides/live-conversations)。実装・検証の範囲は[GPT-Live追加計画](gpt-live-implementation-plan.md)を参照する。
+
+## Barge-in制御（Realtime backend）
 
 AI音声送話中に発信者が話し始めた場合、設定によりAI音声をキャンセルできる。
 

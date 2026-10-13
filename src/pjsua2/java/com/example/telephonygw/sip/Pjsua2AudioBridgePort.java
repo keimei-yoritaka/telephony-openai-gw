@@ -2,6 +2,8 @@ package com.example.telephonygw.sip;
 
 import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.media.AudioFrame;
+import com.example.telephonygw.logging.GatewayEventLogger;
+import java.time.Instant;
 import org.pjsip.pjsua2.AudioMediaPort;
 import org.pjsip.pjsua2.ByteVector;
 import org.pjsip.pjsua2.MediaFormatAudio;
@@ -16,7 +18,6 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
     private static final System.Logger LOG = System.getLogger(Pjsua2AudioBridgePort.class.getName());
     private static final long LOG_EVERY_FRAMES = 50;
     private static final int FRAME_DURATION_MS = 20;
-    private static final int OUTBOUND_START_BUFFER_FRAMES = 8;
 
     private final String sessionId;
     private final int callId;
@@ -71,7 +72,8 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             provideFrame(frame, new byte[frameBytes], true);
             return;
         }
-        if (!outboundPlaying && depthBeforePoll < OUTBOUND_START_BUFFER_FRAMES && !outboundComplete) {
+        if (!outboundPlaying && depthBeforePoll < audioBridge.outboundStartBufferFrames(sessionId)
+                && !outboundComplete && !audioBridge.isLiveOutputQuiet(sessionId)) {
             provideFrame(frame, new byte[frameBytes], true);
             return;
         }
@@ -80,6 +82,8 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             outboundPlaying = true;
             audioBridge.markOutboundPlayoutActive(sessionId);
             int clearedInboundFrames = audioBridge.clearInboundForAssistantSpeaking(sessionId);
+            GatewayEventLogger.info(LOG, "openai_voice_playout_started", "sessionId", sessionId,
+                    "backend", audioBridge.isLiveSession(sessionId) ? "live" : "realtime", "bufferedFrames", depthBeforePoll);
             LOG.log(System.Logger.Level.INFO,
                     "Started outbound RTP audio playout: sessionId={0}, callId={1}, bufferedFrames={2}, outputComplete={3}, clearedInboundFrames={4}",
                     sessionId, callId, depthBeforePoll, outboundComplete, clearedInboundFrames);
@@ -89,6 +93,8 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         byte[] payload;
         if (outbound == null) {
             outboundPlaying = false;
+            GatewayEventLogger.info(LOG, "openai_voice_playout_queue_empty", "sessionId", sessionId,
+                    "backend", audioBridge.isLiveSession(sessionId) ? "live" : "realtime");
             audioBridge.markOutboundPlayoutInactive(sessionId);
             if (outboundComplete) {
                 audioBridge.clearOutboundComplete(sessionId);
@@ -96,9 +102,26 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             payload = new byte[frameBytes];
             provideFrame(frame, payload, true);
         } else {
+            if (audioBridge.isLiveSession(sessionId)) {
+                long queueMs = Math.max(0L, Duration.between(outbound.capturedAt(), Instant.now()).toMillis());
+                if (outboundFrames.get() % LOG_EVERY_FRAMES == 0) {
+                    GatewayEventLogger.info(LOG, "openai_live_playout",
+                            "sessionId", sessionId, "queueMs", queueMs, "outboundDepth", depthBeforePoll,
+                            "audioActive", pcmActive(outbound.payload()));
+                }
+            }
             payload = normalizeFrame(outbound.payload());
             provideFrame(frame, payload, false);
         }
+    }
+
+    private static boolean pcmActive(byte[] pcm) {
+        double sum = 0;
+        for (int i = 0; i + 1 < pcm.length; i += 2) {
+            int sample = (short) ((pcm[i] & 255) | (pcm[i + 1] << 8));
+            sum += (double) sample * sample;
+        }
+        return pcm.length > 1 && Math.sqrt(sum / (pcm.length / 2)) > 327.68;
     }
 
     private void provideFrame(MediaFrame frame, byte[] payload, boolean silence) {

@@ -18,8 +18,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
-public final class RealtimeClient implements AutoCloseable {
-    private static final System.Logger LOG = System.getLogger(RealtimeClient.class.getName());
+public final class VoiceSessionManager implements AutoCloseable {
+    private static final System.Logger LOG = System.getLogger(VoiceSessionManager.class.getName());
     private static final long FORWARDER_IDLE_SLEEP_MILLIS = 20L;
     private static final Duration SESSION_IDLE_TIMEOUT = Duration.ofSeconds(15);
     private static final Duration SESSION_RETRY_DELAY = Duration.ofSeconds(15);
@@ -31,21 +31,34 @@ public final class RealtimeClient implements AutoCloseable {
     private final ConversationEventPublisher conversationEventPublisher;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean forwarding = new AtomicBoolean(false);
-    private final Map<String, RealtimeSession> sessions = new ConcurrentHashMap<>();
+    private final Map<String, VoiceSession> sessions = new ConcurrentHashMap<>();
     private final Map<String, Object> sessionLocks = new ConcurrentHashMap<>();
     private final Map<String, Long> retryNotBeforeNanos = new ConcurrentHashMap<>();
     private final Map<String, Thread> forwardingThreads = new ConcurrentHashMap<>();
+    private final java.util.Set<String> greetedCalls = ConcurrentHashMap.newKeySet();
     private final AtomicLong forwardedFrames = new AtomicLong();
     private final AtomicLong failedFrames = new AtomicLong();
     private final AtomicLong skippedFrames = new AtomicLong();
     private HttpClient httpClient;
+    private final SessionFactory sessionFactoryOverride;
 
-    public RealtimeClient(
+    @FunctionalInterface
+    interface SessionFactory {
+        VoiceSession create(String sessionId, OpenAiConfig config, BotConfig bot);
+    }
+
+    public VoiceSessionManager(
             List<SessionSlotConfig> sessionSlots,
             OpenAiRuntimeConfig runtimeConfig,
             AudioBridge audioBridge,
             ConversationEventPublisher conversationEventPublisher
     ) {
+        this(sessionSlots, runtimeConfig, audioBridge, conversationEventPublisher, null);
+    }
+
+    VoiceSessionManager(List<SessionSlotConfig> sessionSlots, OpenAiRuntimeConfig runtimeConfig,
+            AudioBridge audioBridge, ConversationEventPublisher conversationEventPublisher, SessionFactory sessionFactoryOverride) {
+        this.sessionFactoryOverride = sessionFactoryOverride;
         this.slotConfigs = slotConfigs(sessionSlots);
         this.runtimeConfig = runtimeConfig;
         this.audioBridge = audioBridge;
@@ -56,31 +69,43 @@ public final class RealtimeClient implements AutoCloseable {
         if (initialized.compareAndSet(false, true)) {
             httpClient = HttpClient.newHttpClient();
             LOG.log(System.Logger.Level.INFO,
-                    "Initialized OpenAI Realtime client for {0} session slot(s)",
+                    "Initialized OpenAI voice session manager for {0} session slot(s)",
                     slotConfigs.size());
-            warmUpAsync();
+            if (sessionFactoryOverride == null) warmUpAsync();
         }
     }
 
     public void startAudioForwarding() {
         if (!initialized.get()) {
-            throw new IllegalStateException("Realtime client is not initialized");
+            throw new IllegalStateException("Voice session manager is not initialized");
         }
         if (!forwarding.compareAndSet(false, true)) {
             return;
         }
 
-        LOG.log(System.Logger.Level.INFO, "Enabled OpenAI Realtime session audio forwarding");
+        LOG.log(System.Logger.Level.INFO, "Enabled OpenAI voice session audio forwarding");
         GatewayEventLogger.info(LOG, "openai_audio_forwarding_enabled");
     }
 
-    public RealtimeSession openSession(String callSessionId) {
+    public VoiceSession openSession(String callSessionId) {
         if (!initialized.get()) {
-            throw new IllegalStateException("Realtime client is not initialized");
+            throw new IllegalStateException("Voice session manager is not initialized");
         }
         SessionRuntimeConfig runtimeConfig = requireSessionConfig(callSessionId);
         OpenAiConfig config = runtimeConfig.openAiConfig();
         BotConfig botConfig = runtimeConfig.botConfig();
+        if (sessionFactoryOverride != null) {
+            VoiceSession session = sessionFactoryOverride.create(callSessionId, config, botConfig);
+            session.open();
+            return session;
+        }
+        if (config.isLive()) {
+            LiveSession session = new LiveSession(callSessionId, config, botConfig, audioBridge,
+                    conversationEventPublisher, httpClient,
+                    () -> sessionConfigs.get(callSessionId) == runtimeConfig && initialized.get());
+            session.open();
+            return session;
+        }
         RealtimeSession session = new RealtimeSession(
                 callSessionId,
                 config.apiKey(),
@@ -111,7 +136,7 @@ public final class RealtimeClient implements AutoCloseable {
     }
 
     private void warmUp() {
-        SessionRuntimeConfig runtimeConfig = slotConfigs.values().stream().findFirst().orElse(null);
+        SessionRuntimeConfig runtimeConfig = slotConfigs.values().stream().filter(slot -> !slot.openAiConfig().isLive()).findFirst().orElse(null);
         if (runtimeConfig == null) {
             return;
         }
@@ -162,7 +187,9 @@ public final class RealtimeClient implements AutoCloseable {
             return;
         }
         SessionRuntimeConfig runtimeConfig = requireSlotConfig(slotId);
-        sessionConfigs.put(callSessionId, runtimeConfig);
+        synchronized (sessionConfigs) { sessionConfigs.put(callSessionId, runtimeConfig); }
+        audioBridge.configureSessionBackend(callSessionId, runtimeConfig.openAiConfig().isLive(),
+                runtimeConfig.openAiConfig().liveStartBufferFrames());
         startForwardingWorker(callSessionId, slotId);
         Thread starter = new Thread(
                 () -> startSessionAsync(callSessionId, reason),
@@ -177,34 +204,39 @@ public final class RealtimeClient implements AutoCloseable {
 
     private void startSessionAsync(String callSessionId, String reason) {
         try {
-            RealtimeSession session = sessionFor(callSessionId);
+            VoiceSession session = sessionFor(callSessionId);
             SessionRuntimeConfig runtimeConfig = requireSessionConfig(callSessionId);
-            session.startInitialGreeting(runtimeConfig.botConfig().initialGreeting());
+
             LOG.log(System.Logger.Level.INFO,
-                    "Started OpenAI Realtime session for call start: sessionId={0}, slotId={1}, reason={2}",
+                    "Started OpenAI voice session for call start: sessionId={0}, slotId={1}, reason={2}",
                     callSessionId, runtimeConfig.slotId(), reason);
             GatewayEventLogger.info(LOG, "openai_session_started",
                     "sessionId", callSessionId,
                     "slotId", runtimeConfig.slotId(),
-                    "reason", reason);
+                    "reason", reason, "backend", runtimeConfig.openAiConfig().backend());
         } catch (RuntimeException e) {
-            markSessionRetry(callSessionId, e);
+            if (sessionConfigs.containsKey(callSessionId)) markSessionRetry(callSessionId, e);
             failedFrames.incrementAndGet();
         }
     }
 
     public void closeSession(String callSessionId, String slotId, String reason) {
-        RealtimeSession session = sessions.remove(callSessionId);
-        sessionConfigs.remove(callSessionId);
+        VoiceSession session;
+        synchronized (sessionConfigs) {
+            sessionConfigs.remove(callSessionId);
+            session = sessions.remove(callSessionId);
+            greetedCalls.remove(callSessionId);
+        }
         sessionLocks.remove(callSessionId);
+
         retryNotBeforeNanos.remove(callSessionId);
         stopForwardingWorker(callSessionId);
         int clearedFrames = audioBridge.clearOutbound(callSessionId);
         int clearedInboundFrames = audioBridge.clearInbound(callSessionId);
         if (session != null) {
-            session.close();
+            closeAsync(session);
             LOG.log(System.Logger.Level.INFO,
-                    "Closed OpenAI Realtime session for call close: sessionId={0}, reason={1}, clearedInboundFrames={2}, clearedOutboundFrames={3}",
+                    "Closed OpenAI voice session for call close: sessionId={0}, reason={1}, clearedInboundFrames={2}, clearedOutboundFrames={3}",
                     callSessionId, reason, clearedInboundFrames, clearedFrames);
             GatewayEventLogger.info(LOG, "openai_session_closed_for_call",
                     "sessionId", callSessionId,
@@ -234,7 +266,7 @@ public final class RealtimeClient implements AutoCloseable {
             closeSessions();
             httpClient = null;
             LOG.log(System.Logger.Level.INFO,
-                    "Closed OpenAI Realtime client: forwardedFrames={0}, failedFrames={1}, skippedFrames={2}",
+                    "Closed OpenAI voice session manager: forwardedFrames={0}, failedFrames={1}, skippedFrames={2}",
                     forwardedFrames.get(), failedFrames.get(), skippedFrames.get());
         }
     }
@@ -285,7 +317,7 @@ public final class RealtimeClient implements AutoCloseable {
             return;
         }
 
-        RealtimeSession session;
+        VoiceSession session;
         try {
             session = sessionFor(frame.sessionId());
         } catch (RuntimeException e) {
@@ -304,14 +336,15 @@ public final class RealtimeClient implements AutoCloseable {
         } else {
             failedFrames.incrementAndGet();
             sessions.remove(frame.sessionId(), session);
-            sessionLocks.remove(frame.sessionId());
+            audioBridge.clearOutbound(frame.sessionId());
+            audioBridge.clearInbound(frame.sessionId());
             markSessionRetry(frame.sessionId(), null);
-            session.close();
+            closeAsync(session);
         }
     }
 
-    private RealtimeSession sessionFor(String sessionId) {
-        RealtimeSession existing = sessions.get(sessionId);
+    private VoiceSession sessionFor(String sessionId) {
+        VoiceSession existing = sessions.get(sessionId);
         if (existing != null) {
             return existing;
         }
@@ -322,18 +355,26 @@ public final class RealtimeClient implements AutoCloseable {
                 return existing;
             }
             try {
-                RealtimeSession opened = openSession(sessionId);
-                sessions.put(sessionId, opened);
+                SessionRuntimeConfig expected = requireSessionConfig(sessionId);
+                VoiceSession opened = openSession(sessionId);
+                synchronized (sessionConfigs) {
+                    if (!initialized.get() || sessionConfigs.get(sessionId) != expected) {
+                        closeAsync(opened);
+                        throw new IllegalStateException("Call ended during OpenAI session startup");
+                    }
+                    sessions.put(sessionId, opened);
+                    if (greetedCalls.add(sessionId)) opened.startInitialGreeting(expected.botConfig().initialGreeting());
+                }
                 retryNotBeforeNanos.remove(sessionId);
                 return opened;
-            } catch (RuntimeException e) {
-                sessionLocks.remove(sessionId, lock);
-                throw e;
+            } finally {
+                if (!sessionConfigs.containsKey(sessionId)) sessionLocks.remove(sessionId, lock);
             }
         }
     }
 
     private boolean isRetryCoolingDown(String sessionId) {
+        if (!sessionConfigs.containsKey(sessionId)) return true;
         Long retryAt = retryNotBeforeNanos.get(sessionId);
         if (retryAt == null) {
             return false;
@@ -347,6 +388,7 @@ public final class RealtimeClient implements AutoCloseable {
     }
 
     private void markSessionRetry(String sessionId, RuntimeException error) {
+        if (!sessionConfigs.containsKey(sessionId)) return;
         retryNotBeforeNanos.put(sessionId, System.nanoTime() + SESSION_RETRY_DELAY.toNanos());
         if (error == null) {
             LOG.log(System.Logger.Level.WARNING,
@@ -396,14 +438,6 @@ public final class RealtimeClient implements AutoCloseable {
             return;
         }
         worker.interrupt();
-        if (Thread.currentThread() == worker) {
-            return;
-        }
-        try {
-            worker.join(500);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
         LOG.log(System.Logger.Level.INFO,
                 "Stopped OpenAI audio forwarding worker: sessionId={0}",
                 sessionId);
@@ -419,21 +453,27 @@ public final class RealtimeClient implements AutoCloseable {
     }
 
     private void closeIdleSession(String sessionId) {
-        RealtimeSession session = sessions.get(sessionId);
+        VoiceSession session = sessions.get(sessionId);
         if (session == null || !session.isIdle(System.nanoTime(), SESSION_IDLE_TIMEOUT)) {
             return;
         }
         if (sessions.remove(sessionId, session)) {
             session.close();
-            sessionLocks.remove(sessionId);
         }
     }
 
+    private static void closeAsync(VoiceSession session) {
+        Thread closer = new Thread(session::close, "openai-session-closer");
+        closer.setDaemon(true);
+        closer.start();
+    }
+
     private void closeSessions() {
-        for (RealtimeSession session : sessions.values()) {
+        for (VoiceSession session : sessions.values()) {
             session.close();
         }
         sessions.clear();
+        greetedCalls.clear();
         sessionConfigs.clear();
         sessionLocks.clear();
         retryNotBeforeNanos.clear();

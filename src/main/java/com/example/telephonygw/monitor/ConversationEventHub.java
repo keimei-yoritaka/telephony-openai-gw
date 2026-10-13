@@ -48,14 +48,38 @@ public final class ConversationEventHub implements ConversationEventPublisher {
                 true));
     }
 
+    @Override
+    public void publishTranscriptSnapshot(String sessionId, String speaker, String segmentId, String sourceEventId,
+            String text, Instant timestamp, long startMs, long endMs) {
+        if (text.isBlank()) return;
+        publish(new ConversationEvent(nextId.getAndIncrement(), sessionId, speaker, text, timestamp,
+                "", "", false, segmentId, sourceEventId, startMs, endMs));
+    }
+
+    @Override
+    public List<ConversationEvent> recentTranscripts(String sessionId) { return eventsForSession(sessionId); }
+
     public void publish(ConversationEvent event) {
         synchronized (history) {
-            history.add(event);
+            int existing = -1;
+            if (!event.segmentId().isEmpty()) {
+                for (int i = 0; i < history.size(); i++) {
+                    ConversationEvent previous = history.get(i);
+                    if (previous.sessionId().equals(event.sessionId()) && previous.segmentId().equals(event.segmentId())) {
+                        existing = i;
+                        break;
+                    }
+                }
+            }
+            if (existing >= 0) {
+                if (history.get(existing).id() >= event.id()) return;
+                history.set(existing, event);
+            } else history.add(event);
             while (history.size() > maxEvents) {
                 history.remove(0);
             }
         }
-        sessionUpdatedAt.put(event.sessionId(), event.timestamp());
+        sessionUpdatedAt.put(event.sessionId(), Instant.now());
         notifySubscribers(event);
     }
 

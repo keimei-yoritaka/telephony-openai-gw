@@ -12,7 +12,17 @@
 - `telephony-openai-gw.service`がsystemdに登録済み
 - `config/gateway.local.yaml`がRHEL環境用に作成済み
 
-## 今回の更新内容
+## GPT-Live Experimentalを追加適用する場合
+
+以下の既存手順はmulti-session更新時の記録である。GPT-Live追加は`codex/experimental`を対象にし、Stableや`main`へは反映しない。source / scriptと、実環境向けに調整したLive設定を適用する。
+
+追加のJava依存はGson 2.13.2。サービスを起動する前に、Repositoryルートで`telephonygw`ユーザーとして`sh scripts/java-deps-classpath.sh`を実行し、checksum確認済みjarを`.deps/java`へ用意する。初回取得にcurl / openssl / Maven CentralへのHTTPS通信が必要。閉域環境では同じjarを事前配置する。
+
+`config/gateway.live.example.yaml`はRealtime / Live混在の設定例。`openai.backend: live`、`openai.liveModel`、`openai.liveVoice`を実行設定へ追加する。delegation / 業務toolの設定は不要。従来Realtime設定はbackend未指定で継続できる。
+
+詳しい導入・検証は[デプロイメントガイド](deployment-guide.md#experimentalのgpt-liveを導入する場合)を参照する。今回のRHEL実機試験は未実施。
+
+## 既存multi-session更新時の内容
 
 対象commit:
 

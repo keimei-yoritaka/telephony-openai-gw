@@ -118,14 +118,34 @@ public record GatewayConfig(
             int turnDetectionServerVadSilenceDurationMs,
             boolean transcriptLoggingEnabled,
             String inputTranscriptionModel,
-            String inputTranscriptionLanguage
+            String inputTranscriptionLanguage,
+            String backend,
+            String liveModel,
+            String liveVoice,
+            int liveStartBufferFrames
     ) {
+        public boolean isLive() { return "live".equals(backend); }
+
+        public String selectedModel() { return isLive() ? liveModel : realtimeModel; }
+
+        public String selectedVoice() { return isLive() ? liveVoice : voice; }
+
         public void validate() {
             validate("openai");
         }
 
         public void validate(String prefix) {
             require(prefix + ".apiKey", apiKey);
+            require(prefix + ".backend", backend);
+            if (!Set.of("realtime", "live").contains(backend)) {
+                throw new IllegalArgumentException(prefix + ".backend must be realtime or live");
+            }
+            if (isLive()) {
+                require(prefix + ".liveModel", liveModel);
+                require(prefix + ".liveVoice", liveVoice);
+                requireRange(prefix + ".liveStartBufferFrames", liveStartBufferFrames, 1, 50);
+                return;
+            }
             require(prefix + ".realtimeModel", realtimeModel);
             require(prefix + ".voice", voice);
             if (!SUPPORTED_REALTIME_VOICES.contains(voice.toLowerCase())) {
