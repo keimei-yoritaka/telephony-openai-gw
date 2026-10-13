@@ -85,6 +85,8 @@ flowchart LR
 
 本アプリケーションは、設定ファイル上の`gateway.sessionIds`で固定セッションスロットを定義する。各スロットは独立したSIP transport、SIP account、Registration、OpenAI設定を持つ。
 
+voiceはRealtimeで`openai.voice`、Liveで`openai.liveVoice`を使用する。backend別の対応一覧、公式資料で確認できる特徴、設定検証と変更反映の方法は[Realtime / GPT-Liveのvoice設定](voice-settings.md)を参照する。本項は既存仕様の説明追加であり、設定形式や実装の変更はない。
+
 ```yaml
 gateway:
   sessionIds: session-1,session-2
