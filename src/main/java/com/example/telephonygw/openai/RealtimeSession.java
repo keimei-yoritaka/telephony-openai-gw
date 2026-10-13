@@ -1,5 +1,6 @@
 package com.example.telephonygw.openai;
 
+import com.example.telephonygw.config.GatewayConfig.OpenAiRuntimeConfig;
 import com.example.telephonygw.logging.GatewayEventLogger;
 import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.media.AudioFrame;
@@ -36,10 +37,14 @@ public final class RealtimeSession implements AutoCloseable {
     private final String maxOutputTokens;
     private final String turnDetectionType;
     private final String turnDetectionEagerness;
+    private final double turnDetectionServerVadThreshold;
+    private final int turnDetectionServerVadPrefixPaddingMs;
+    private final int turnDetectionServerVadSilenceDurationMs;
     private final boolean transcriptLoggingEnabled;
     private final String inputTranscriptionModel;
     private final String inputTranscriptionLanguage;
     private final String systemInstructions;
+    private final OpenAiRuntimeConfig runtimeConfig;
     private final AudioBridge audioBridge;
     private final ConversationEventPublisher conversationEventPublisher;
     private final HttpClient httpClient;
@@ -50,6 +55,10 @@ public final class RealtimeSession implements AutoCloseable {
     private final AtomicLong receivedOutputChunks = new AtomicLong();
     private final AtomicLong queuedOutputFrames = new AtomicLong();
     private final AtomicBoolean initialGreetingStarted = new AtomicBoolean(false);
+    private final AtomicBoolean responseActive = new AtomicBoolean(false);
+    private final AtomicBoolean bargeInCancelledForSpeech = new AtomicBoolean(false);
+    private final AtomicLong userSpeechStartedNanos = new AtomicLong();
+    private final AtomicLong assistantAudioStartedNanos = new AtomicLong();
     private final ByteArrayOutputStream pendingOutputPcm = new ByteArrayOutputStream();
     private CompletableFuture<Void> sendChain = CompletableFuture.completedFuture(null);
     private volatile long lastFrameNanos;
@@ -63,10 +72,14 @@ public final class RealtimeSession implements AutoCloseable {
             String maxOutputTokens,
             String turnDetectionType,
             String turnDetectionEagerness,
+            double turnDetectionServerVadThreshold,
+            int turnDetectionServerVadPrefixPaddingMs,
+            int turnDetectionServerVadSilenceDurationMs,
             boolean transcriptLoggingEnabled,
             String inputTranscriptionModel,
             String inputTranscriptionLanguage,
             String systemInstructions,
+            OpenAiRuntimeConfig runtimeConfig,
             AudioBridge audioBridge,
             ConversationEventPublisher conversationEventPublisher,
             HttpClient httpClient
@@ -78,10 +91,14 @@ public final class RealtimeSession implements AutoCloseable {
         this.maxOutputTokens = Objects.requireNonNull(maxOutputTokens, "maxOutputTokens");
         this.turnDetectionType = Objects.requireNonNull(turnDetectionType, "turnDetectionType");
         this.turnDetectionEagerness = Objects.requireNonNull(turnDetectionEagerness, "turnDetectionEagerness");
+        this.turnDetectionServerVadThreshold = turnDetectionServerVadThreshold;
+        this.turnDetectionServerVadPrefixPaddingMs = turnDetectionServerVadPrefixPaddingMs;
+        this.turnDetectionServerVadSilenceDurationMs = turnDetectionServerVadSilenceDurationMs;
         this.transcriptLoggingEnabled = transcriptLoggingEnabled;
         this.inputTranscriptionModel = Objects.requireNonNull(inputTranscriptionModel, "inputTranscriptionModel");
         this.inputTranscriptionLanguage = Objects.requireNonNull(inputTranscriptionLanguage, "inputTranscriptionLanguage");
         this.systemInstructions = Objects.requireNonNull(systemInstructions, "systemInstructions");
+        this.runtimeConfig = Objects.requireNonNull(runtimeConfig, "runtimeConfig");
         this.audioBridge = Objects.requireNonNull(audioBridge, "audioBridge");
         this.conversationEventPublisher = Objects.requireNonNull(
                 conversationEventPublisher, "conversationEventPublisher");
@@ -98,7 +115,9 @@ public final class RealtimeSession implements AutoCloseable {
                     .header("Authorization", "Bearer " + apiKey)
                     .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
                     .buildAsync(sessionUri(), new SessionListener(callSessionId, audioBridge, pendingOutputPcm,
-                            receivedOutputChunks, queuedOutputFrames, conversationEventPublisher))
+                            receivedOutputChunks, queuedOutputFrames, conversationEventPublisher,
+                            runtimeConfig, responseActive, userSpeechStartedNanos,
+                            assistantAudioStartedNanos, bargeInCancelledForSpeech))
                     .get(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             sendText(sessionUpdateEvent());
             LOG.log(System.Logger.Level.INFO,
@@ -111,7 +130,16 @@ public final class RealtimeSession implements AutoCloseable {
                     "inputRateHz", OPENAI_AUDIO_SAMPLE_RATE_HZ,
                     "maxOutputTokens", maxOutputTokens,
                     "turnDetection", turnDetectionType,
-                    "transcriptLoggingEnabled", transcriptLoggingEnabled);
+                    "turnDetectionEagerness", turnDetectionEagerness,
+                    "turnDetectionServerVadThreshold", turnDetectionServerVadThreshold,
+                    "turnDetectionServerVadPrefixPaddingMs", turnDetectionServerVadPrefixPaddingMs,
+                    "turnDetectionServerVadSilenceDurationMs", turnDetectionServerVadSilenceDurationMs,
+                    "transcriptLoggingEnabled", transcriptLoggingEnabled,
+                    "cancelResponseOnUserSpeech", runtimeConfig.cancelResponseOnUserSpeech(),
+                    "dropInputAudioWhileAssistantSpeaking", runtimeConfig.dropInputAudioWhileAssistantSpeaking(),
+                    "bargeInMinSpeechMs", runtimeConfig.bargeInMinSpeechMs(),
+                    "bargeInMinRmsDb", runtimeConfig.bargeInMinRmsDb(),
+                    "bargeInGraceMsAfterAssistantStarts", runtimeConfig.bargeInGraceMsAfterAssistantStarts());
         } catch (Exception e) {
             open.set(false);
             throw new IllegalStateException("Failed to open OpenAI Realtime WebSocket session", e);
@@ -141,6 +169,7 @@ public final class RealtimeSession implements AutoCloseable {
             sentFrames.incrementAndGet();
             sentBytes.addAndGet(audio.length);
             lastFrameNanos = System.nanoTime();
+            maybeCancelResponseForUserSpeech(frame.payload(), lastFrameNanos);
             return true;
         } catch (RuntimeException e) {
             LOG.log(System.Logger.Level.WARNING,
@@ -237,14 +266,69 @@ public final class RealtimeSession implements AutoCloseable {
     }
 
     private String turnDetectionJson() {
+        String interruptResponse = Boolean.toString(runtimeConfig.cancelResponseOnUserSpeech());
         if ("semantic_vad".equalsIgnoreCase(turnDetectionType)) {
             return """
-                    {"type":"semantic_vad","eagerness":"%s","create_response":true,"interrupt_response":true}\
-                    """.formatted(json(turnDetectionEagerness));
+                    {"type":"semantic_vad","eagerness":"%s","create_response":true,"interrupt_response":%s}\
+                    """.formatted(json(turnDetectionEagerness), interruptResponse);
         }
         return """
-                {"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":800,"create_response":true,"interrupt_response":true}\
-                """;
+                {"type":"server_vad","threshold":%s,"prefix_padding_ms":%d,"silence_duration_ms":%d,"create_response":true,"interrupt_response":%s}\
+                """.formatted(Double.toString(turnDetectionServerVadThreshold),
+                turnDetectionServerVadPrefixPaddingMs,
+                turnDetectionServerVadSilenceDurationMs,
+                interruptResponse);
+    }
+
+    private void maybeCancelResponseForUserSpeech(byte[] pcm16, long nowNanos) {
+        if (!runtimeConfig.cancelResponseOnUserSpeech()
+                || !responseActive.get()
+                || !bargeInCancelledForSpeech.compareAndSet(false, true)) {
+            return;
+        }
+
+        long speechStartedAt = userSpeechStartedNanos.get();
+        long assistantAudioStartedAt = assistantAudioStartedNanos.get();
+        double rmsDb = rmsDbfs(pcm16);
+        long speechDurationMs = elapsedMillis(speechStartedAt, nowNanos);
+        long assistantAudioElapsedMs = elapsedMillis(assistantAudioStartedAt, nowNanos);
+        if (speechStartedAt <= 0L
+                || assistantAudioStartedAt <= 0L
+                || speechDurationMs < runtimeConfig.bargeInMinSpeechMs()
+                || assistantAudioElapsedMs < runtimeConfig.bargeInGraceMsAfterAssistantStarts()
+                || rmsDb < runtimeConfig.bargeInMinRmsDb()) {
+            bargeInCancelledForSpeech.set(false);
+            return;
+        }
+
+        if (!responseActive.compareAndSet(true, false)) {
+            return;
+        }
+        int clearedFrames = audioBridge.clearOutbound(callSessionId);
+        synchronized (pendingOutputPcm) {
+            pendingOutputPcm.reset();
+        }
+        WebSocket socket = webSocket;
+        if (socket != null) {
+            socket.sendText("{\"type\":\"response.cancel\"}", true)
+                    .orTimeout(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .exceptionally(error -> {
+                        LOG.log(System.Logger.Level.DEBUG,
+                                "OpenAI response cancel failed or was not needed: sessionId={0}, error={1}",
+                                callSessionId, error.getMessage());
+                        return null;
+                    });
+        }
+        LOG.log(System.Logger.Level.INFO,
+                "Cancelled OpenAI response because sustained user speech was detected: sessionId={0}, speechDurationMs={1}, rmsDb={2}, clearedFrames={3}",
+                callSessionId, speechDurationMs, String.format("%.1f", rmsDb), clearedFrames);
+        GatewayEventLogger.info(LOG, "openai_response_cancelled_for_barge_in",
+                "sessionId", callSessionId,
+                "speechDurationMs", speechDurationMs,
+                "rmsDb", String.format("%.1f", rmsDb),
+                "clearedFrames", clearedFrames,
+                "bargeInMinSpeechMs", runtimeConfig.bargeInMinSpeechMs(),
+                "bargeInMinRmsDb", runtimeConfig.bargeInMinRmsDb());
     }
 
     private String transcriptionJson() {
@@ -255,6 +339,31 @@ public final class RealtimeSession implements AutoCloseable {
                 ? ""
                 : ",\"language\":\"" + json(inputTranscriptionLanguage) + "\"";
         return ",\"transcription\":{\"model\":\"" + json(inputTranscriptionModel) + "\"" + languageField + "}";
+    }
+
+    private static double rmsDbfs(byte[] pcm16) {
+        if (pcm16.length < 2) {
+            return -100.0;
+        }
+        long samples = 0;
+        double sumSquares = 0.0;
+        for (int i = 0; i + 1 < pcm16.length; i += 2) {
+            int sample = (pcm16[i] & 0xff) | (pcm16[i + 1] << 8);
+            sumSquares += (double) sample * sample;
+            samples++;
+        }
+        if (samples == 0 || sumSquares <= 0.0) {
+            return -100.0;
+        }
+        double rms = Math.sqrt(sumSquares / samples);
+        return 20.0 * Math.log10(rms / 32768.0);
+    }
+
+    private static long elapsedMillis(long startNanos, long endNanos) {
+        if (startNanos <= 0L || endNanos <= 0L || endNanos < startNanos) {
+            return -1L;
+        }
+        return TimeUnit.NANOSECONDS.toMillis(endNanos - startNanos);
     }
 
     private static String json(String value) {
@@ -288,7 +397,11 @@ public final class RealtimeSession implements AutoCloseable {
         private final AtomicLong receivedOutputChunks;
         private final AtomicLong queuedOutputFrames;
         private final ConversationEventPublisher conversationEventPublisher;
-        private final AtomicBoolean responseActive = new AtomicBoolean(false);
+        private final OpenAiRuntimeConfig runtimeConfig;
+        private final AtomicBoolean responseActive;
+        private final AtomicLong sharedUserSpeechStartedNanos;
+        private final AtomicLong assistantAudioStartedNanos;
+        private final AtomicBoolean bargeInCancelledForSpeech;
         private final StringBuilder message = new StringBuilder();
         private long speechStartedNanos;
         private long speechStoppedNanos;
@@ -299,6 +412,7 @@ public final class RealtimeSession implements AutoCloseable {
         private long currentResponseChunks;
         private long currentResponsePcm24Bytes;
         private long currentResponseQueuedFrames;
+        private long currentResponseDroppedFrames;
 
         private SessionListener(
                 String callSessionId,
@@ -306,7 +420,12 @@ public final class RealtimeSession implements AutoCloseable {
                 ByteArrayOutputStream pendingOutputPcm,
                 AtomicLong receivedOutputChunks,
                 AtomicLong queuedOutputFrames,
-                ConversationEventPublisher conversationEventPublisher
+                ConversationEventPublisher conversationEventPublisher,
+                OpenAiRuntimeConfig runtimeConfig,
+                AtomicBoolean responseActive,
+                AtomicLong sharedUserSpeechStartedNanos,
+                AtomicLong assistantAudioStartedNanos,
+                AtomicBoolean bargeInCancelledForSpeech
         ) {
             this.callSessionId = callSessionId;
             this.audioBridge = audioBridge;
@@ -314,6 +433,11 @@ public final class RealtimeSession implements AutoCloseable {
             this.receivedOutputChunks = receivedOutputChunks;
             this.queuedOutputFrames = queuedOutputFrames;
             this.conversationEventPublisher = conversationEventPublisher;
+            this.runtimeConfig = runtimeConfig;
+            this.responseActive = responseActive;
+            this.sharedUserSpeechStartedNanos = sharedUserSpeechStartedNanos;
+            this.assistantAudioStartedNanos = assistantAudioStartedNanos;
+            this.bargeInCancelledForSpeech = bargeInCancelledForSpeech;
         }
 
         @Override
@@ -358,14 +482,19 @@ public final class RealtimeSession implements AutoCloseable {
                 if (eventType.equals("response.output_audio.delta") && responseActive.get()) {
                     if (firstAudioDeltaNanos == 0L) {
                         firstAudioDeltaNanos = eventNanos;
+                        assistantAudioStartedNanos.set(eventNanos);
                         logFirstAudioLatency();
                     }
                     queueOutputAudio(payload);
                 } else if (eventType.equals("input_audio_buffer.speech_started")) {
                     speechStartedNanos = eventNanos;
+                    sharedUserSpeechStartedNanos.set(eventNanos);
+                    bargeInCancelledForSpeech.set(false);
                     handleUserSpeechStarted(webSocket);
                 } else if (eventType.equals("input_audio_buffer.speech_stopped")) {
                     speechStoppedNanos = eventNanos;
+                    sharedUserSpeechStartedNanos.set(0L);
+                    bargeInCancelledForSpeech.set(false);
                     GatewayEventLogger.info(LOG, "openai_user_speech_stopped",
                             "sessionId", callSessionId,
                             "speechDurationMs", elapsedMillis(speechStartedNanos, speechStoppedNanos));
@@ -389,6 +518,8 @@ public final class RealtimeSession implements AutoCloseable {
                     resetCurrentResponseStats();
                     responseCreatedNanos = eventNanos;
                     responseActive.set(true);
+                    assistantAudioStartedNanos.set(0L);
+                    bargeInCancelledForSpeech.set(false);
                     audioBridge.markOutboundActive(callSessionId);
                     GatewayEventLogger.info(LOG, "openai_response_created",
                             "sessionId", callSessionId);
@@ -396,9 +527,10 @@ public final class RealtimeSession implements AutoCloseable {
                     outputAudioDoneNanos = eventNanos;
                     audioBridge.markOutboundComplete(callSessionId);
                     LOG.log(System.Logger.Level.INFO,
-                            "OpenAI output audio completed: sessionId={0}, responseChunks={1}, responsePcm24Bytes={2}, responseQueuedFrames={3}, responseAudioMs={4}, firstAudioLatencyMs={5}, outputDurationMs={6}, pendingBytes={7}, outboundDepth={8}",
+                            "OpenAI output audio completed: sessionId={0}, responseChunks={1}, responsePcm24Bytes={2}, responseQueuedFrames={3}, responseDroppedFrames={4}, responseAudioMs={5}, firstAudioLatencyMs={6}, outputDurationMs={7}, pendingBytes={8}, outboundDepth={9}",
                             callSessionId, currentResponseChunks, currentResponsePcm24Bytes,
                             currentResponseQueuedFrames,
+                            currentResponseDroppedFrames,
                             currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
                             elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
                             elapsedMillis(firstAudioDeltaNanos, outputAudioDoneNanos),
@@ -407,6 +539,7 @@ public final class RealtimeSession implements AutoCloseable {
                             "sessionId", callSessionId,
                             "responseChunks", currentResponseChunks,
                             "responseQueuedFrames", currentResponseQueuedFrames,
+                            "responseDroppedFrames", currentResponseDroppedFrames,
                             "responseAudioMs", currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
                             "firstAudioLatencyMs", elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
                             "responseCreatedToFirstAudioMs", elapsedMillis(responseCreatedNanos, firstAudioDeltaNanos),
@@ -420,13 +553,16 @@ public final class RealtimeSession implements AutoCloseable {
                             extractStringField(payload, "transcript", 0));
                 } else if (eventType.equals("response.done")) {
                     responseActive.set(false);
+                    assistantAudioStartedNanos.set(0L);
+                    bargeInCancelledForSpeech.set(false);
                     audioBridge.markOutboundComplete(callSessionId);
                     LOG.log(System.Logger.Level.INFO,
-                            "OpenAI response done details: sessionId={0}, status={1}, statusDetails={2}, responseQueuedFrames={3}, responseAudioMs={4}, firstAudioLatencyMs={5}, responseTotalLatencyMs={6}, outboundDepth={7}",
+                            "OpenAI response done details: sessionId={0}, status={1}, statusDetails={2}, responseQueuedFrames={3}, responseDroppedFrames={4}, responseAudioMs={5}, firstAudioLatencyMs={6}, responseTotalLatencyMs={7}, outboundDepth={8}",
                             callSessionId,
                             extractStringField(payload, "status", 0),
                             extractJsonFieldSnippet(payload, "status_details"),
                             currentResponseQueuedFrames,
+                            currentResponseDroppedFrames,
                             currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
                             elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
                             elapsedMillis(inputCommittedNanos, eventNanos),
@@ -435,6 +571,7 @@ public final class RealtimeSession implements AutoCloseable {
                             "sessionId", callSessionId,
                             "status", extractStringField(payload, "status", 0),
                             "responseQueuedFrames", currentResponseQueuedFrames,
+                            "responseDroppedFrames", currentResponseDroppedFrames,
                             "responseAudioMs", currentResponseQueuedFrames * RTP_FRAME_DURATION_MS,
                             "firstAudioLatencyMs", elapsedMillis(inputCommittedNanos, firstAudioDeltaNanos),
                             "responseCreatedToFirstAudioMs", elapsedMillis(responseCreatedNanos, firstAudioDeltaNanos),
@@ -530,6 +667,17 @@ public final class RealtimeSession implements AutoCloseable {
                                     "Queued OpenAI output audio frame for RTP: sessionId={0}, frames={1}, outboundDepth={2}",
                                     callSessionId, count, audioBridge.outboundDepth(callSessionId));
                         }
+                    } else {
+                        currentResponseDroppedFrames++;
+                        if (currentResponseDroppedFrames == 1 || currentResponseDroppedFrames % 50 == 0) {
+                            LOG.log(System.Logger.Level.WARNING,
+                                    "Dropped OpenAI output audio frame because outbound queue is full: sessionId={0}, responseDroppedFrames={1}, outboundDepth={2}",
+                                    callSessionId, currentResponseDroppedFrames, audioBridge.outboundDepth(callSessionId));
+                            GatewayEventLogger.warning(LOG, "openai_output_audio_frame_dropped",
+                                    "sessionId", callSessionId,
+                                    "responseDroppedFrames", currentResponseDroppedFrames,
+                                    "outboundDepth", audioBridge.outboundDepth(callSessionId));
+                        }
                     }
                 }
                 pendingOutputPcm.reset();
@@ -543,6 +691,7 @@ public final class RealtimeSession implements AutoCloseable {
             currentResponseChunks = 0;
             currentResponsePcm24Bytes = 0;
             currentResponseQueuedFrames = 0;
+            currentResponseDroppedFrames = 0;
             responseCreatedNanos = 0L;
             firstAudioDeltaNanos = 0L;
             outputAudioDoneNanos = 0L;
@@ -568,31 +717,15 @@ public final class RealtimeSession implements AutoCloseable {
         }
 
         private void handleUserSpeechStarted(WebSocket webSocket) {
-            boolean wasResponseActive = responseActive.compareAndSet(true, false);
-            int clearedFrames = 0;
-            if (wasResponseActive) {
-                clearedFrames = audioBridge.clearOutbound(callSessionId);
-                synchronized (pendingOutputPcm) {
-                    pendingOutputPcm.reset();
-                }
-                webSocket.sendText("{\"type\":\"response.cancel\"}", true)
-                        .orTimeout(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                        .exceptionally(error -> {
-                            LOG.log(System.Logger.Level.DEBUG,
-                                    "OpenAI response cancel failed or was not needed: sessionId={0}, error={1}",
-                                    callSessionId, error.getMessage());
-                            return null;
-                        });
-            }
-            if (clearedFrames > 0) {
-                LOG.log(System.Logger.Level.INFO,
-                        "Cleared outbound audio because user speech started: sessionId={0}, clearedFrames={1}",
-                        callSessionId, clearedFrames);
-            }
+            boolean responseWasActive = responseActive.get();
             GatewayEventLogger.info(LOG, "openai_user_speech_started",
                     "sessionId", callSessionId,
-                    "interruptedResponse", wasResponseActive,
-                    "clearedFrames", clearedFrames);
+                    "cancelResponseOnUserSpeech", runtimeConfig.cancelResponseOnUserSpeech(),
+                    "dropInputAudioWhileAssistantSpeaking", runtimeConfig.dropInputAudioWhileAssistantSpeaking(),
+                    "responseWasActive", responseWasActive,
+                    "bargeInCandidate", runtimeConfig.cancelResponseOnUserSpeech() && responseWasActive,
+                    "bargeInMinSpeechMs", runtimeConfig.bargeInMinSpeechMs(),
+                    "bargeInMinRmsDb", runtimeConfig.bargeInMinRmsDb());
         }
 
         private void logTranscript(String speaker, String itemId, String responseId, String transcript) {

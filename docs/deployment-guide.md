@@ -83,6 +83,8 @@ scripts/check-pjsua2-java.sh
 scripts/run-pjsua2-startup-check.sh config/gateway.pjsua2.example.yaml
 ```
 
+`scripts/check-pjsua2-java.sh`実行時にOpenH264 native libraryが見つからない警告が出ても、最後に`PJSUA2 Java binding check completed.`が出ていれば確認成功として扱う。本Gatewayは音声のみを扱いvideo codecを使わないため、OpenH264警告は無害である。
+
 実SIP環境で待ち受ける場合:
 
 ```sh
@@ -97,6 +99,8 @@ grep 'GW_EVENT' apl.log
 ```
 
 ## RHEL 8.10デモ環境
+
+既存RHELデモ環境へアプリケーション差分を反映する場合は、初回導入手順ではなく[RHELデモ環境への差分反映手順](rhel-update-patch-guide.md)を参照する。
 
 ### 前提
 
@@ -265,12 +269,26 @@ sudo chmod 640 /etc/telephony-openai-gw/gateway.yaml
 
 会話モニターUIを有効にする場合は、`gateway.yaml`に以下を設定する。同一サーバ上のブラウザやSSH port forwardingで確認する場合は`127.0.0.1`のままでよい。EC2外部のブラウザから直接確認する場合は`0.0.0.0`へ変更し、Security Groupで接続元IPを限定する。
 
+AI音声の送話中に発信者の発話開始を検知した時点でAI音声をキャンセルしたい場合は、以下を有効化する。短い相づちや環境音でもAI音声が止まる可能性があるため、デモシナリオに合わせて判断する。
+
+```yaml
+openai:
+  cancelResponseOnUserSpeech: true
+  dropInputAudioWhileAssistantSpeaking: false
+  bargeInMinSpeechMs: 600
+  bargeInMinRmsDb: -35.0
+  bargeInGraceMsAfterAssistantStarts: 500
+```
+
+AI音声をキャンセルせず、AI音声の送話中に受けた発信者音声をOpenAIへ送らず破棄したい場合は、`dropInputAudioWhileAssistantSpeaking: true`を指定する。
+
 ```yaml
 monitor:
   enabled: true
   bindAddress: 127.0.0.1
   port: 8080
   maxEvents: 500
+  sessionHistoryDepth: 10
 ```
 
 secretは`/etc/sysconfig/telephony-openai-gw`に配置する。

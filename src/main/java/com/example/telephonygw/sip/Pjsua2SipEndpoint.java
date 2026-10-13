@@ -1,7 +1,8 @@
 package com.example.telephonygw.sip;
 
-import com.example.telephonygw.config.GatewayConfig.RegistrationConfig;
 import com.example.telephonygw.config.GatewayConfig.LoggingConfig;
+import com.example.telephonygw.config.GatewayConfig.RegistrationConfig;
+import com.example.telephonygw.config.GatewayConfig.SessionSlotConfig;
 import com.example.telephonygw.config.GatewayConfig.SipConfig;
 import com.example.telephonygw.media.AudioBridge;
 import com.example.telephonygw.session.CallSessionManager;
@@ -21,30 +22,23 @@ import java.util.concurrent.atomic.AtomicReference;
 final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddressObserver {
     private static final System.Logger LOG = System.getLogger(Pjsua2SipEndpoint.class.getName());
 
-    private final SipConfig sipConfig;
-    private final RegistrationConfig registrationConfig;
+    private final List<SlotRuntime> slots;
     private final LoggingConfig loggingConfig;
     private final CallSessionManager sessionManager;
     private final AudioBridge audioBridge;
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean eventsRunning = new AtomicBoolean(false);
-    private final AtomicReference<String> detectedPublicAddress = new AtomicReference<>();
-    private final AtomicReference<String> pendingPublicAddressUpdate = new AtomicReference<>();
 
     private Object endpoint;
-    private Object account;
     private Thread eventThread;
-    private int transportId = -1;
 
     Pjsua2SipEndpoint(
-            SipConfig sipConfig,
-            RegistrationConfig registrationConfig,
+            List<SessionSlotConfig> sessionSlots,
             LoggingConfig loggingConfig,
             CallSessionManager sessionManager,
             AudioBridge audioBridge
     ) {
-        this.sipConfig = sipConfig;
-        this.registrationConfig = registrationConfig;
+        this.slots = sessionSlots.stream().map(SlotRuntime::new).toList();
         this.loggingConfig = loggingConfig;
         this.sessionManager = sessionManager;
         this.audioBridge = audioBridge;
@@ -63,26 +57,22 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
             configureNativeLogging(epConfig);
             invoke(endpoint, "libInit", epConfig);
 
-            Object transportConfig = newInstance("org.pjsip.pjsua2.TransportConfig");
-            invoke(transportConfig, "setPort", (long) sipConfig.port());
-            invoke(transportConfig, "setBoundAddress", sipConfig.bindAddress());
-            if (!configuredPublicAddress().isBlank()) {
-                invoke(transportConfig, "setPublicAddress", configuredPublicAddress());
+            for (SlotRuntime slot : slots) {
+                createTransport(slot);
             }
 
-            int udpTransport = staticInt("org.pjsip.pjsua2.pjsip_transport_type_e", "PJSIP_TRANSPORT_UDP");
-            transportId = (Integer) invoke(endpoint, "transportCreate", udpTransport, transportConfig);
             invoke(endpoint, "libStart");
             logAvailableCodecs();
             configureCodecPolicy();
             startEventLoop();
 
             LOG.log(System.Logger.Level.INFO,
-                    "Started PJSUA2 endpoint transportId={0} bind={1}:{2}/UDP IPv4",
-                    transportId, sipConfig.bindAddress(), sipConfig.port());
+                    "Started PJSUA2 endpoint with {0} session slot(s)",
+                    slots.size());
         } catch (ReflectiveOperationException e) {
             started.set(false);
-            throw new IllegalStateException("Failed to start PJSUA2 endpoint. Check PJSUA2 classpath and java.library.path.", e);
+            throw new IllegalStateException(
+                    "Failed to start PJSUA2 endpoint. Check PJSUA2 classpath and java.library.path.", e);
         } catch (RuntimeException e) {
             started.set(false);
             throw e;
@@ -92,37 +82,46 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
     @Override
     public void register() {
         ensureStarted();
-        try {
-            Object accountConfig = buildAccountConfig();
-            account = newAccount();
-            invoke(account, "create", accountConfig, true);
+        for (SlotRuntime slot : slots) {
+            try {
+                Object accountConfig = buildAccountConfig(slot);
+                Object account = newAccount(slot);
+                invoke(account, "create", accountConfig, true);
+                slot.account = account;
 
-            LOG.log(System.Logger.Level.INFO,
-                    "Started SIP Registration for {0} via {1}:{2}",
-                    registrationConfig.sipAddress(),
-                    registrationConfig.registryServerAddress(),
-                    registrationConfig.registryServerPort());
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Failed to create PJSUA2 account for SIP Registration.", e);
+                LOG.log(System.Logger.Level.INFO,
+                        "Started SIP Registration for {0} via {1}:{2}: slotId={3}",
+                        slot.registrationConfig().sipAddress(),
+                        slot.registrationConfig().registryServerAddress(),
+                        slot.registrationConfig().registryServerPort(),
+                        slot.slotId());
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(
+                        "Failed to create PJSUA2 account for SIP Registration: slotId=" + slot.slotId(), e);
+            }
         }
     }
 
     @Override
-    public void onRegistrationReflexiveAddressDetected(String publicAddress, int publicPort) {
-        if (!configuredPublicAddress().isBlank()) {
-            LOG.log(System.Logger.Level.INFO,
-                    "Detected SIP Registration reflexive address {0}:{1}, keeping configured public address {2}",
-                    publicAddress, publicPort, configuredPublicAddress());
+    public void onRegistrationReflexiveAddressDetected(String slotId, String publicAddress, int publicPort) {
+        SlotRuntime slot = slot(slotId);
+        if (slot == null) {
             return;
         }
-        String previous = detectedPublicAddress.getAndSet(publicAddress);
+        if (!configuredPublicAddress(slot).isBlank()) {
+            LOG.log(System.Logger.Level.INFO,
+                    "Detected SIP Registration reflexive address {0}:{1}, keeping configured public address {2}: slotId={3}",
+                    publicAddress, publicPort, configuredPublicAddress(slot), slotId);
+            return;
+        }
+        String previous = slot.detectedPublicAddress.getAndSet(publicAddress);
         if (Objects.equals(previous, publicAddress)) {
             return;
         }
         LOG.log(System.Logger.Level.INFO,
-                "Detected SIP Registration reflexive address from Via rport/received: publicAddress={0}, publicPort={1}",
-                publicAddress, publicPort);
-        pendingPublicAddressUpdate.set(publicAddress);
+                "Detected SIP Registration reflexive address from Via rport/received: slotId={0}, publicAddress={1}, publicPort={2}",
+                slotId, publicAddress, publicPort);
+        slot.pendingPublicAddressUpdate.set(publicAddress);
     }
 
     @Override
@@ -142,39 +141,54 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         }
 
         registerCurrentThread("pjsua2-stop");
-        closeAccount();
+        closeAccounts();
         destroyEndpoint();
-        sessionManager.closeAll("pjsua2_endpoint_stop");
         LOG.log(System.Logger.Level.INFO, "Stopped PJSUA2 endpoint");
     }
 
-    private Object buildAccountConfig() throws ReflectiveOperationException {
+    private void createTransport(SlotRuntime slot) throws ReflectiveOperationException {
+        Object transportConfig = newInstance("org.pjsip.pjsua2.TransportConfig");
+        invoke(transportConfig, "setPort", (long) slot.sipConfig().port());
+        invoke(transportConfig, "setBoundAddress", slot.sipConfig().bindAddress());
+        if (!configuredPublicAddress(slot).isBlank()) {
+            invoke(transportConfig, "setPublicAddress", configuredPublicAddress(slot));
+        }
+
+        int udpTransport = staticInt("org.pjsip.pjsua2.pjsip_transport_type_e", "PJSIP_TRANSPORT_UDP");
+        slot.transportId = (Integer) invoke(endpoint, "transportCreate", udpTransport, transportConfig);
+        LOG.log(System.Logger.Level.INFO,
+                "Created PJSUA2 UDP transport: slotId={0}, transportId={1}, bind={2}:{3}",
+                slot.slotId(), slot.transportId, slot.sipConfig().bindAddress(), slot.sipConfig().port());
+    }
+
+    private Object buildAccountConfig(SlotRuntime slot) throws ReflectiveOperationException {
         Object accountConfig = newInstance("org.pjsip.pjsua2.AccountConfig");
-        invoke(accountConfig, "setIdUri", registrationConfig.sipAddress());
+        invoke(accountConfig, "setIdUri", slot.registrationConfig().sipAddress());
 
         Object regConfig = invoke(accountConfig, "getRegConfig");
-        invoke(regConfig, "setRegistrarUri", registrarUri());
+        invoke(regConfig, "setRegistrarUri", registrarUri(slot.registrationConfig()));
         invoke(regConfig, "setRegisterOnAdd", true);
 
         Object sipCfg = invoke(accountConfig, "getSipConfig");
-        invoke(sipCfg, "setTransportId", transportId);
+        invoke(sipCfg, "setTransportId", slot.transportId);
         Object authCreds = invoke(sipCfg, "getAuthCreds");
-        Object credential = newAuthCredential();
+        Object credential = newAuthCredential(slot.registrationConfig());
         invoke(authCreds, "add", credential);
 
-        configureAccountMedia(accountConfig);
+        configureAccountMedia(slot, accountConfig);
 
         return accountConfig;
     }
 
-    private void configureAccountMedia(Object accountConfig) throws ReflectiveOperationException {
+    private void configureAccountMedia(SlotRuntime slot, Object accountConfig) throws ReflectiveOperationException {
+        SipConfig sipConfig = slot.sipConfig();
         Object mediaConfig = invoke(accountConfig, "getMediaConfig");
         Object mediaTransportConfig = invoke(mediaConfig, "getTransportConfig");
         invoke(mediaTransportConfig, "setBoundAddress", sipConfig.bindAddress());
         invoke(mediaTransportConfig, "setPort", (long) sipConfig.rtpPortStart());
-        invoke(mediaTransportConfig, "setPortRange", (long) rtpPortRange());
+        invoke(mediaTransportConfig, "setPortRange", (long) rtpPortRange(sipConfig));
         invoke(mediaTransportConfig, "setRandomizePort", true);
-        String publicAddress = effectivePublicAddress();
+        String publicAddress = effectivePublicAddress(slot);
         if (!publicAddress.isBlank()) {
             invoke(mediaTransportConfig, "setPublicAddress", publicAddress);
         }
@@ -182,33 +196,34 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         invoke(mediaConfig, "setStreamKaEnabled", true);
 
         LOG.log(System.Logger.Level.INFO,
-                "Configured PJSUA2 media transport NAT advertisement: publicAddress={0}, bindAddress={1}, rtpPortRange={2}-{3}, randomizePort=true, streamKeepAlive=true",
+                "Configured PJSUA2 media transport NAT advertisement: slotId={0}, publicAddress={1}, bindAddress={2}, rtpPortRange={3}-{4}, randomizePort=true, streamKeepAlive=true",
+                slot.slotId(),
                 publicAddress.isBlank() ? "(auto)" : publicAddress,
                 sipConfig.bindAddress(),
                 sipConfig.rtpPortStart(),
                 sipConfig.rtpPortEnd());
     }
 
-    private int rtpPortRange() {
+    private int rtpPortRange(SipConfig sipConfig) {
         return sipConfig.rtpPortEnd() - sipConfig.rtpPortStart();
     }
 
-    private void applyDetectedPublicAddress(String publicAddress) {
-        Object currentAccount = account;
+    private void applyDetectedPublicAddress(SlotRuntime slot, String publicAddress) {
+        Object currentAccount = slot.account;
         if (currentAccount == null) {
             return;
         }
         registerCurrentThread("pjsua2-registration-address-update");
         try {
-            Object accountConfig = buildAccountConfig();
+            Object accountConfig = buildAccountConfig(slot);
             invoke(currentAccount, "modify", accountConfig);
             LOG.log(System.Logger.Level.INFO,
-                    "Updated PJSUA2 account media public address from SIP Registration reflexive address: publicAddress={0}",
-                    publicAddress);
+                    "Updated PJSUA2 account media public address from SIP Registration reflexive address: slotId={0}, publicAddress={1}",
+                    slot.slotId(), publicAddress);
         } catch (ReflectiveOperationException | RuntimeException e) {
             LOG.log(System.Logger.Level.WARNING,
-                    "Failed to update PJSUA2 account media public address from SIP Registration reflexive address {0}: {1}",
-                    publicAddress, e.getMessage());
+                    "Failed to update PJSUA2 account media public address from SIP Registration reflexive address {0}: slotId={1}, error={2}",
+                    publicAddress, slot.slotId(), e.getMessage());
         }
     }
 
@@ -237,11 +252,12 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         invoke(logConfig, "setMsgLogging", messageLogging);
     }
 
-    private Object newAccount() throws ReflectiveOperationException {
+    private Object newAccount(SlotRuntime slot) throws ReflectiveOperationException {
         try {
             Constructor<?> constructor = clazz("com.example.telephonygw.sip.Pjsua2Account")
-                    .getConstructor(CallSessionManager.class, AudioBridge.class, RegistrationAddressObserver.class);
-            return constructor.newInstance(sessionManager, audioBridge, this);
+                    .getConstructor(String.class, CallSessionManager.class, AudioBridge.class,
+                            RegistrationAddressObserver.class);
+            return constructor.newInstance(slot.slotId(), sessionManager, audioBridge, this);
         } catch (ClassNotFoundException e) {
             LOG.log(System.Logger.Level.WARNING,
                     "PJSUA2 account callback class is not available. Incoming INVITE may be rejected by PJSIP.");
@@ -249,7 +265,7 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         }
     }
 
-    private Object newAuthCredential() throws ReflectiveOperationException {
+    private Object newAuthCredential(RegistrationConfig registrationConfig) throws ReflectiveOperationException {
         Constructor<?> constructor = clazz("org.pjsip.pjsua2.AuthCredInfo")
                 .getConstructor(String.class, String.class, String.class, int.class, String.class);
         return constructor.newInstance(
@@ -260,22 +276,22 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
                 registrationConfig.password());
     }
 
-    private String registrarUri() {
+    private String registrarUri(RegistrationConfig registrationConfig) {
         return "sip:" + registrationConfig.registryServerAddress()
                 + ":" + registrationConfig.registryServerPort()
                 + ";transport=udp";
     }
 
-    private String configuredPublicAddress() {
-        return sipConfig.publicContactAddress();
+    private String configuredPublicAddress(SlotRuntime slot) {
+        return slot.sipConfig().publicContactAddress();
     }
 
-    private String effectivePublicAddress() {
-        String configured = configuredPublicAddress();
+    private String effectivePublicAddress(SlotRuntime slot) {
+        String configured = configuredPublicAddress(slot);
         if (!configured.isBlank()) {
             return configured;
         }
-        String detected = detectedPublicAddress.get();
+        String detected = slot.detectedPublicAddress.get();
         return detected == null ? "" : detected;
     }
 
@@ -300,8 +316,8 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
                 invoke(endpoint, "codecSetPriority", entry.getKey(), entry.getValue());
             }
             LOG.log(System.Logger.Level.INFO,
-                    "Configured PJSUA2 codec policy: preferredCodec={0}, enabledCodecs={1}, disabledCodecs={2}",
-                    sipConfig.preferredCodec(), enabledCodecs, disabled);
+                    "Configured PJSUA2 codec policy: enabledCodecs={0}, disabledCodecs={1}",
+                    enabledCodecs, disabled);
         } catch (ReflectiveOperationException | RuntimeException e) {
             LOG.log(System.Logger.Level.WARNING,
                     "Failed to set configured codec priority. Continuing with PJSIP defaults: {0}",
@@ -312,15 +328,20 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
     private Map<String, Short> codecPriorityByPrefix() {
         Map<String, Short> priorities = new LinkedHashMap<>();
         short priority = 255;
-        priorities.put(codecPrefix(sipConfig.preferredCodec()), priority);
-        for (String codec : sipConfig.codecs()) {
-            String prefix = codecPrefix(codec);
-            if (!priorities.containsKey(prefix)) {
-                priority = (short) Math.max(1, priority - 16);
-                priorities.put(prefix, priority);
+        for (SlotRuntime slot : slots) {
+            putCodecPriority(priorities, slot.sipConfig().preferredCodec(), priority);
+            for (String codec : slot.sipConfig().codecs()) {
+                if (!priorities.containsKey(codecPrefix(codec))) {
+                    priority = (short) Math.max(1, priority - 16);
+                    putCodecPriority(priorities, codec, priority);
+                }
             }
         }
         return priorities;
+    }
+
+    private static void putCodecPriority(Map<String, Short> priorities, String codec, short priority) {
+        priorities.putIfAbsent(codecPrefix(codec), priority);
     }
 
     private static String codecPrefix(String codec) {
@@ -381,7 +402,7 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
             while (eventsRunning.get()) {
                 try {
                     invoke(endpoint, "libHandleEvents", 50L);
-                    applyPendingPublicAddressUpdate();
+                    applyPendingPublicAddressUpdates();
                 } catch (ReflectiveOperationException | RuntimeException e) {
                     if (eventsRunning.get()) {
                         LOG.log(System.Logger.Level.WARNING, "PJSUA2 event loop error: {0}", e.getMessage());
@@ -393,10 +414,12 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         eventThread.start();
     }
 
-    private void applyPendingPublicAddressUpdate() {
-        String publicAddress = pendingPublicAddressUpdate.getAndSet(null);
-        if (publicAddress != null) {
-            applyDetectedPublicAddress(publicAddress);
+    private void applyPendingPublicAddressUpdates() {
+        for (SlotRuntime slot : slots) {
+            String publicAddress = slot.pendingPublicAddressUpdate.getAndSet(null);
+            if (publicAddress != null) {
+                applyDetectedPublicAddress(slot, publicAddress);
+            }
         }
     }
 
@@ -413,17 +436,21 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         }
     }
 
-    private void closeAccount() {
-        if (account == null) {
-            return;
-        }
-        try {
-            invoke(account, "shutdown");
-            invoke(account, "delete");
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            LOG.log(System.Logger.Level.WARNING, "Failed to close PJSUA2 account: {0}", e.getMessage());
-        } finally {
-            account = null;
+    private void closeAccounts() {
+        for (SlotRuntime slot : slots) {
+            if (slot.account == null) {
+                continue;
+            }
+            try {
+                invoke(slot.account, "shutdown");
+                invoke(slot.account, "delete");
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "Failed to close PJSUA2 account: slotId={0}, error={1}",
+                        slot.slotId(), e.getMessage());
+            } finally {
+                slot.account = null;
+            }
         }
     }
 
@@ -445,6 +472,15 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
         if (!started.get()) {
             throw new IllegalStateException("PJSUA2 endpoint is not started");
         }
+    }
+
+    private SlotRuntime slot(String slotId) {
+        for (SlotRuntime slot : slots) {
+            if (slot.slotId().equals(slotId)) {
+                return slot;
+            }
+        }
+        return null;
     }
 
     private static Class<?> clazz(String className) throws ClassNotFoundException {
@@ -521,5 +557,29 @@ final class Pjsua2SipEndpoint implements SipEndpointAdapter, RegistrationAddress
             return Double.class;
         }
         return Void.class;
+    }
+
+    private static final class SlotRuntime {
+        private final SessionSlotConfig sessionSlot;
+        private final AtomicReference<String> detectedPublicAddress = new AtomicReference<>();
+        private final AtomicReference<String> pendingPublicAddressUpdate = new AtomicReference<>();
+        private int transportId = -1;
+        private Object account;
+
+        private SlotRuntime(SessionSlotConfig sessionSlot) {
+            this.sessionSlot = sessionSlot;
+        }
+
+        private String slotId() {
+            return sessionSlot.slotId();
+        }
+
+        private SipConfig sipConfig() {
+            return sessionSlot.sip();
+        }
+
+        private RegistrationConfig registrationConfig() {
+            return sessionSlot.registration();
+        }
     }
 }

@@ -15,54 +15,82 @@ public final class GatewayConfigLoader {
 
     public static GatewayConfig load(Path path) throws IOException {
         Map<String, String> values = parseSimpleYaml(path);
+        List<GatewayConfig.SessionSlotConfig> sessions = new ArrayList<>();
+        for (String slotId : stringListValue(values, "gateway.sessionIds", "")) {
+            sessions.add(sessionSlot(values, slotId));
+        }
         GatewayConfig config = new GatewayConfig(
-                new GatewayConfig.SipConfig(
-                        value(values, "sip.backend"),
-                        value(values, "sip.bindAddress"),
-                        intValue(values, "sip.port"),
-                        value(values, "sip.transport"),
-                        value(values, "sip.ipVersion"),
-                        optionalValue(values, "sip.codec", "PCMU").toUpperCase(Locale.ROOT),
-                        optionalValue(values, "sip.preferredCodec",
-                                optionalValue(values, "sip.codec", "PCMU")).toUpperCase(Locale.ROOT),
-                        listValue(values, "sip.codecs", optionalValue(values, "sip.codec", "PCMU")),
-                        optionalValue(values, "sip.publicContactAddress"),
-                        intValue(values, "sip.rtpPortStart", 40000),
-                        intValue(values, "sip.rtpPortEnd", 41000)
+                List.copyOf(sessions),
+                new GatewayConfig.MediaConfig(
+                        intValue(values, "media.inboundQueueCapacity", 500),
+                        intValue(values, "media.outboundQueueCapacity", 10000)
                 ),
-                new GatewayConfig.RegistrationConfig(
-                        value(values, "registration.domain"),
-                        value(values, "registration.userName"),
-                        value(values, "registration.password"),
-                        value(values, "registration.sipAddress"),
-                        value(values, "registration.registryServerAddress"),
-                        intValue(values, "registration.registryServerPort")
-                ),
-                new GatewayConfig.OpenAiConfig(
-                        value(values, "openai.apiKey"),
-                        value(values, "openai.realtimeModel"),
-                        optionalValue(values, "openai.voice", "shimmer"),
-                        optionalValue(values, "openai.maxOutputTokens", "inf"),
-                        optionalValue(values, "openai.turnDetectionType", "semantic_vad"),
-                        optionalValue(values, "openai.turnDetectionEagerness", "low"),
-                        booleanValue(values, "openai.transcriptLoggingEnabled", true),
-                        optionalValue(values, "openai.inputTranscriptionModel", "gpt-realtime-whisper"),
-                        optionalValue(values, "openai.inputTranscriptionLanguage", "ja")
-                ),
-                new GatewayConfig.BotConfig(
-                        value(values, "bot.systemInstructions"),
-                        optionalValue(values, "bot.initialGreeting", "こちらはAI電話受付です。ご用件をお話しください。")
+                new GatewayConfig.OpenAiRuntimeConfig(
+                        booleanValue(values, "openai.cancelResponseOnUserSpeech", false),
+                        booleanValue(values, "openai.dropInputAudioWhileAssistantSpeaking", false),
+                        intValue(values, "openai.bargeInMinSpeechMs", 600),
+                        doubleValue(values, "openai.bargeInMinRmsDb", -35.0),
+                        intValue(values, "openai.bargeInGraceMsAfterAssistantStarts", 500)
                 ),
                 new GatewayConfig.LoggingConfig(value(values, "logging.level")),
                 new GatewayConfig.MonitorConfig(
                         booleanValue(values, "monitor.enabled", false),
                         optionalValue(values, "monitor.bindAddress", "127.0.0.1"),
                         intValue(values, "monitor.port", 8080),
-                        intValue(values, "monitor.maxEvents", 500)
+                        intValue(values, "monitor.maxEvents", 500),
+                        intValue(values, "monitor.sessionHistoryDepth", 10)
                 )
         );
         config.validate();
         return config;
+    }
+
+    private static GatewayConfig.SessionSlotConfig sessionSlot(Map<String, String> values, String slotId) {
+        String prefix = "session." + slotId + ".";
+        String codec = optionalValue(values, prefix + "sip.codec", "PCMU").toUpperCase(Locale.ROOT);
+        return new GatewayConfig.SessionSlotConfig(
+                slotId,
+                optionalValue(values, prefix + "name", slotId),
+                new GatewayConfig.SipConfig(
+                        value(values, prefix + "sip.backend"),
+                        value(values, prefix + "sip.bindAddress"),
+                        intValue(values, prefix + "sip.port"),
+                        value(values, prefix + "sip.transport"),
+                        value(values, prefix + "sip.ipVersion"),
+                        codec,
+                        optionalValue(values, prefix + "sip.preferredCodec", codec).toUpperCase(Locale.ROOT),
+                        listValue(values, prefix + "sip.codecs", codec),
+                        optionalValue(values, prefix + "sip.publicContactAddress"),
+                        intValue(values, prefix + "sip.rtpPortStart", 40000),
+                        intValue(values, prefix + "sip.rtpPortEnd", 41000)
+                ),
+                new GatewayConfig.RegistrationConfig(
+                        value(values, prefix + "registration.domain"),
+                        value(values, prefix + "registration.userName"),
+                        value(values, prefix + "registration.password"),
+                        value(values, prefix + "registration.sipAddress"),
+                        value(values, prefix + "registration.registryServerAddress"),
+                        intValue(values, prefix + "registration.registryServerPort")
+                ),
+                new GatewayConfig.OpenAiConfig(
+                        value(values, prefix + "openai.apiKey"),
+                        value(values, prefix + "openai.realtimeModel"),
+                        optionalValue(values, prefix + "openai.voice", "shimmer"),
+                        optionalValue(values, prefix + "openai.maxOutputTokens", "inf"),
+                        optionalValue(values, prefix + "openai.turnDetectionType", "semantic_vad"),
+                        optionalValue(values, prefix + "openai.turnDetectionEagerness", "low"),
+                        doubleValue(values, prefix + "openai.turnDetectionServerVadThreshold", 0.5),
+                        intValue(values, prefix + "openai.turnDetectionServerVadPrefixPaddingMs", 300),
+                        intValue(values, prefix + "openai.turnDetectionServerVadSilenceDurationMs", 800),
+                        booleanValue(values, prefix + "openai.transcriptLoggingEnabled", true),
+                        optionalValue(values, prefix + "openai.inputTranscriptionModel", "gpt-realtime-whisper"),
+                        optionalValue(values, prefix + "openai.inputTranscriptionLanguage", "ja")
+                ),
+                new GatewayConfig.BotConfig(
+                        value(values, prefix + "bot.systemInstructions"),
+                        optionalValue(values, prefix + "bot.initialGreeting", "こちらはAI電話受付です。ご用件をお話しください。")
+                )
+        );
     }
 
     private static Map<String, String> parseSimpleYaml(Path path) throws IOException {
@@ -161,6 +189,18 @@ public final class GatewayConfigLoader {
         }
     }
 
+    private static double doubleValue(Map<String, String> values, String key, double defaultValue) {
+        String value = values.get(key);
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(key + " must be a number", e);
+        }
+    }
+
     private static List<String> listValue(Map<String, String> values, String key, String defaultValue) {
         String value = values.get(key);
         if (value == null || value.isBlank()) {
@@ -171,6 +211,21 @@ public final class GatewayConfigLoader {
             String entry = rawEntry.trim();
             if (!entry.isBlank()) {
                 entries.add(entry.toUpperCase(Locale.ROOT));
+            }
+        }
+        return List.copyOf(entries);
+    }
+
+    private static List<String> stringListValue(Map<String, String> values, String key, String defaultValue) {
+        String value = values.get(key);
+        if (value == null || value.isBlank()) {
+            value = defaultValue;
+        }
+        List<String> entries = new ArrayList<>();
+        for (String rawEntry : value.split(",")) {
+            String entry = rawEntry.trim();
+            if (!entry.isBlank()) {
+                entries.add(entry);
             }
         }
         return List.copyOf(entries);

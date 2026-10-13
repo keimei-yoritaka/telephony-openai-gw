@@ -1,7 +1,10 @@
 package com.example.telephonygw.monitor;
 
 import com.example.telephonygw.config.GatewayConfig.MonitorConfig;
+import com.example.telephonygw.config.GatewayConfig.SessionSlotConfig;
 import com.example.telephonygw.logging.GatewayEventLogger;
+import com.example.telephonygw.session.CallSession;
+import com.example.telephonygw.session.CallSessionManager;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -10,12 +13,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -31,16 +37,27 @@ public final class ConversationMonitorServer implements AutoCloseable {
     private static final long SSE_KEEPALIVE_SECONDS = 15L;
     private static final String MONITOR_RESOURCE_ROOT = "monitor/";
     private static final Path MONITOR_SOURCE_ROOT = Path.of("src/main/resources/monitor");
+    private static final Path RESOURCE_SOURCE_ROOT = Path.of("resources");
 
     private final MonitorConfig config;
     private final ConversationEventHub eventHub;
+    private final CallSessionManager sessionManager;
+    private final Map<String, String> sessionNames;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private HttpServer server;
     private ExecutorService executor;
 
-    public ConversationMonitorServer(MonitorConfig config, ConversationEventHub eventHub) {
+    public ConversationMonitorServer(
+            MonitorConfig config,
+            ConversationEventHub eventHub,
+            CallSessionManager sessionManager,
+            List<SessionSlotConfig> sessionSlots
+    ) {
         this.config = config;
         this.eventHub = eventHub;
+        this.sessionManager = sessionManager;
+        this.sessionNames = sessionSlots.stream()
+                .collect(Collectors.toUnmodifiableMap(SessionSlotConfig::slotId, SessionSlotConfig::name));
     }
 
     public void start() {
@@ -90,6 +107,8 @@ public final class ConversationMonitorServer implements AutoCloseable {
         String path = exchange.getRequestURI().getPath();
         switch (path) {
             case "/", "/index.html" -> sendAsset(exchange, "index.html", "text/html; charset=utf-8");
+            case "/fabicon.ico", "/favicon.ico" -> sendAsset(exchange, "fabicon.ico", "image/x-icon");
+            case "/background.png" -> sendAsset(exchange, "background.png", "image/png");
             case "/assets/app.css" -> sendAsset(exchange, "app.css", "text/css; charset=utf-8");
             case "/assets/app.js" -> sendAsset(exchange, "app.js", "application/javascript; charset=utf-8");
             default -> sendText(exchange, 404, "Not Found\n", "text/plain; charset=utf-8");
@@ -102,22 +121,16 @@ public final class ConversationMonitorServer implements AutoCloseable {
             return;
         }
         String path = exchange.getRequestURI().getPath();
-        if (!"/api/sessions".equals(path)) {
-            sendJson(exchange, 404, "{\"error\":\"not_found\"}");
+        if ("/api/sessions".equals(path)) {
+            sendJson(exchange, 200, recentSessionsJson());
             return;
         }
-
-        StringBuilder json = new StringBuilder();
-        json.append("{\"sessions\":[");
-        List<String> sessionIds = eventHub.sessionIds();
-        for (int i = 0; i < sessionIds.size(); i++) {
-            if (i > 0) {
-                json.append(',');
-            }
-            json.append('"').append(json(sessionIds.get(i))).append('"');
+        if (path.startsWith("/api/sessions/")) {
+            String sessionId = URLDecoder.decode(path.substring("/api/sessions/".length()), StandardCharsets.UTF_8);
+            sendJson(exchange, 200, sessionJson(sessionId, eventHub.eventsForSession(sessionId)));
+            return;
         }
-        json.append("]}");
-        sendJson(exchange, 200, json.toString());
+        sendJson(exchange, 404, "{\"error\":\"not_found\"}");
     }
 
     private void handleLatestSession(HttpExchange exchange) throws IOException {
@@ -176,6 +189,35 @@ public final class ConversationMonitorServer implements AutoCloseable {
         return json.toString();
     }
 
+    private String recentSessionsJson() {
+        StringBuilder json = new StringBuilder();
+        json.append("{\"sessions\":[");
+        List<CallSession> sessions = sessionManager.recentSessions();
+        for (int i = 0; i < sessions.size(); i++) {
+            if (i > 0) {
+                json.append(',');
+            }
+            CallSession session = sessions.get(i);
+            json.append("{\"sessionId\":\"").append(json(session.sessionId())).append("\"")
+                    .append(",\"slotId\":\"").append(json(session.slotId())).append("\"")
+                    .append(",\"name\":\"").append(json(sessionName(session.slotId()))).append("\"")
+                    .append(",\"state\":\"").append(json(session.state().name().toLowerCase())).append("\"")
+                    .append(",\"startedAt\":\"").append(json(TIMESTAMP_FORMATTER.format(session.startedAt()))).append("\"")
+                    .append(",\"endedAt\":\"").append(json(formatInstant(session.endedAt()))).append("\"")
+                    .append("}");
+        }
+        json.append("]}");
+        return json.toString();
+    }
+
+    private static String formatInstant(java.time.Instant instant) {
+        return instant == null ? "" : TIMESTAMP_FORMATTER.format(instant);
+    }
+
+    private String sessionName(String slotId) {
+        return sessionNames.getOrDefault(slotId, slotId);
+    }
+
     private static void appendEvents(StringBuilder json, List<ConversationEvent> events) {
         for (int i = 0; i < events.size(); i++) {
             if (i > 0) {
@@ -224,6 +266,10 @@ public final class ConversationMonitorServer implements AutoCloseable {
             }
         }
         Path sourcePath = MONITOR_SOURCE_ROOT.resolve(resourceName).normalize();
+        if (Files.isRegularFile(sourcePath)) {
+            return Files.readAllBytes(sourcePath);
+        }
+        sourcePath = RESOURCE_SOURCE_ROOT.resolve(resourceName).normalize();
         if (Files.isRegularFile(sourcePath)) {
             return Files.readAllBytes(sourcePath);
         }

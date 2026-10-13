@@ -2,16 +2,19 @@
 
 SIP/RTPによる電話音声とOpenAIの音声Botを接続する軽量Gatewayを構築するプロジェクトです。
 
-初期方針では、JavaアプリケーションからPJSUA2 Java bindingを利用し、SIP Registration、UDP/IPv4のSIP/RTP、PCMU音声、OpenAI Realtime API連携を実装します。
+JavaアプリケーションからPJSUA2 Java bindingを利用し、SIP Registration、UDP/IPv4のSIP/RTP、G.722/PCMU音声、OpenAI Realtime API連携を実装します。
 
 ## 現在の状態
 
-- 要件・実装計画を整理済みです。
-- GitHub Repositoryは`telephony-openai-gw`としてprivateで管理しています。
-- Javaアプリケーション雛形を作成済みです。
+Stableバージョンは`v0.1.0`です。[リリースノート](docs/releases/v0.1.0.md)に機能と導入上の注意点を記載しています。
+
+- GitHub Repositoryは`telephony-openai-gw`として管理しています。
 - SIP backendは`placeholder`と`pjsua2`を設定で切り替えられます。
-- PJSUA2 backendでは、macOS上でEndpoint起動、UDP/IPv4 SIP transport作成、AccountConfigによるRegistration開始、停止まで確認済みです。
-- 現時点のmedia、OpenAI連携はplaceholder実装です。
+- PJSUA2 backendでは、複数の固定セッションスロットごとにUDP transport、SIP Account、Registrationを作成します。
+- 各セッションスロットは最大1コールを受け付け、OpenAI Realtime sessionと1:1で紐付きます。
+- OpenAI voice、system instructions、initial greetingはセッションスロットごとに設定できます。
+- inbound/outbound audio queueは通話セッションごとに分離し、capacityは`media`設定で共通値として指定できます。
+- OpenAIへのinbound音声転送workerは通話セッションごとに起動します。
 
 ## ローカル確認
 
@@ -31,7 +34,17 @@ scripts/run-local.sh
 
 `gradle`または`gradlew`が利用できる場合、`scripts/run-local.sh`はGradle経由で起動します。どちらも無い場合は、外部依存なしの範囲で`javac`によりcompileして起動します。
 
-現時点ではPJSUA2 Java bindingをまだ組み込んでいないため、SIP RegistrationやOpenAI Realtime接続は実際には行わず、placeholderとしてログ出力します。
+`config/gateway.example.yaml`はplaceholder backendの複数スロット設定例です。PJSUA2を使う場合は`config/gateway.pjsua2.example.yaml`を雛形にして、スロットごとのSIP Registration情報とOpenAI API keyを実環境値に置き換えてください。
+
+デモ用途の実行設定である`config/gateway.local.yaml`はgit管理外です。このファイルに限り、スロットごとの`registration.password`へSIP passwordを平文で記載して構いません。`config/*.example.yaml`やREADME、設計文書などcommit対象のファイルには、実passwordやAPI keyを書かずplaceholderを使います。
+
+音声queueのcapacityは全セッション共通値として`media`セクションで指定します。queue自体は通話セッションごとに作成されます。
+
+```yaml
+media:
+  inboundQueueCapacity: 500
+  outboundQueueCapacity: 10000
+```
 
 PJSUA2 Java bindingのbuild確認:
 
@@ -94,11 +107,53 @@ grep 'GW_EVENT' apl.log
 grep 'CALL_TRANSCRIPT' apl.log
 ```
 
-発信者側の音声認識結果は`speaker=caller`、OpenAI側の音声応答transcriptは`speaker=assistant`として出力されます。発信者側transcriptionは`openai.transcriptLoggingEnabled`で有効化され、`openai.inputTranscriptionModel`と`openai.inputTranscriptionLanguage`でmodelと言語ヒントを指定します。transcriptには通話内容が含まれるため、logの保存・共有時は個人情報や機密情報の扱いに注意してください。
+発信者側の音声認識結果は`speaker=caller`、OpenAI側の音声応答transcriptは`speaker=assistant`として出力されます。発信者側transcriptionはスロットごとの`openai.transcriptLoggingEnabled`で有効化され、`openai.inputTranscriptionModel`と`openai.inputTranscriptionLanguage`でmodelと言語ヒントを指定します。transcriptには通話内容が含まれるため、logの保存・共有時は個人情報や機密情報の扱いに注意してください。
 
 アプリケーション側のログレベルは`config/*.yaml`の`logging.level`で指定します。対応値は`TRACE`、`DEBUG`、`INFO`、`WARN`、`WARNING`、`ERROR`です。
 
 `INFO`はデモ運用向けの既定値です。通話開始/終了、Registration、OpenAI response、会話transcript、警告/エラーは出力しますが、RTP frame単位、audio queue受理、OpenAI input frame転送、PJSIP SIP message dumpなどの高頻度診断ログは出力しません。これらを確認する場合は`logging.level: DEBUG`または`TRACE`を指定します。
+
+## OpenAI応答中の割り込み
+
+`openai.cancelResponseOnUserSpeech: true`を指定すると、アプリがAI音声を送話中でも、発信者側の発話開始をOpenAI Realtime APIが検知した時点でAI音声の送出をキャンセルします。キャンセル時はRTP送信用のOutbound audio queueをクリアし、OpenAIへ`response.cancel`を送信します。
+
+`openai.dropInputAudioWhileAssistantSpeaking: true`を指定すると、アプリがAI音声をRTPへ送話している間は、発信者側の入力音声を破棄し、OpenAI Realtime APIへ`input_audio_buffer.append`を送信しません。AI発話中のユーザー音声を後段に溜めたくないデモでは、このモードを利用します。
+
+デフォルト値は`false`です。短い相づちや環境音でAI音声が止まりやすくなる副作用があるため、デモ内容に合わせて有効化してください。有効化した場合も、以下の条件を満たした場合だけキャンセルします。
+
+`cancelResponseOnUserSpeech`と`dropInputAudioWhileAssistantSpeaking`を両方`true`にした場合、AI音声のRTP送話中は入力破棄が優先されます。その期間の発信者音声はOpenAIへ届かないため、barge-inキャンセル判定の対象にもなりません。
+
+```yaml
+openai:
+  cancelResponseOnUserSpeech: true
+  dropInputAudioWhileAssistantSpeaking: false
+  bargeInMinSpeechMs: 600
+  bargeInMinRmsDb: -35.0
+  bargeInGraceMsAfterAssistantStarts: 500
+```
+
+- `dropInputAudioWhileAssistantSpeaking`: `true`の場合、AI音声のRTP送話中に受けた発信者音声をOpenAIへ送らず破棄する。
+- `bargeInMinSpeechMs`: `speech_started`後、この時間以上発話が継続してからキャンセル候補にする。
+- `bargeInMinRmsDb`: 入力PCMフレームのRMS音量がこの値以上の場合だけキャンセルする。
+- `bargeInGraceMsAfterAssistantStarts`: AI音声の送出開始直後、この時間内はキャンセルしない。
+
+## ユーザー発話区切りの調整
+
+通常はスロットごとの`openai.turnDetectionType: semantic_vad`と`openai.turnDetectionEagerness: low`を推奨します。`low`はOpenAI Realtime APIのsemantic VADで最もユーザー発話を待つ方向の設定です。
+
+それでも発話区切りが短い場合は、`server_vad`へ切り替えて無音判定時間を長くできます。
+
+```yaml
+session.session-1:
+  openai.turnDetectionType: server_vad
+  openai.turnDetectionServerVadThreshold: 0.5
+  openai.turnDetectionServerVadPrefixPaddingMs: 300
+  openai.turnDetectionServerVadSilenceDurationMs: 1200
+```
+
+- `turnDetectionServerVadThreshold`: 小さいほど音声検知が敏感になる。環境音で反応する場合は少し上げる。
+- `turnDetectionServerVadPrefixPaddingMs`: 発話開始前に含める音声の長さ。
+- `turnDetectionServerVadSilenceDurationMs`: 発話終了と判断する無音時間。ユーザーの間を待ちたい場合は長くする。
 
 ## 会話モニターUI
 
@@ -107,6 +162,9 @@ grep 'CALL_TRANSCRIPT' apl.log
 ```sh
 open http://127.0.0.1:8080/
 ```
+
+会話モニターの発話イベント保持数は`monitor.maxEvents`、右側のセッション選択リストに残す最近のセッション数は`monitor.sessionHistoryDepth`で指定します。`monitor.sessionHistoryDepth`のデフォルト値は`10`です。
+右側のセッション選択リストには`session.<slotId>.name`を表示します。未指定の場合は`slotId`を表示します。
 
 RHEL EC2で外部ブラウザから確認する場合は、`monitor.bindAddress: 0.0.0.0`を指定し、security groupで接続元IPを制限してください。認証なしのデモ機能のため、広く公開しないでください。
 
@@ -118,8 +176,10 @@ RHEL EC2で外部ブラウザから確認する場合は、`monitor.bindAddress:
 
 ## 主要ドキュメント
 
+- [システム設計書](docs/system-design.md)
 - [要件・実装計画](docs/requirements-and-implementation-plan.md)
 - [デプロイメントガイド](docs/deployment-guide.md)
+- [RHELデモ環境への差分反映手順](docs/rhel-update-patch-guide.md)
 - [PJSUA2 Java Binding 調査メモ](docs/pjsua2-java-notes.md)
 - [RTP / OpenAI 音声ブリッジ実装計画](docs/rtp-media-bridge-implementation-plan.md)
 - [会話モニターUI 要件・設計メモ](docs/conversation-monitor-requirements-and-design.md)

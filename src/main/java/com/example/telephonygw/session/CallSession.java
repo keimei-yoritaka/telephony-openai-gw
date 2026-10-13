@@ -13,18 +13,24 @@ public final class CallSession {
     }
 
     private final String sessionId;
+    private final String slotId;
     private final Instant startedAt;
     private final AtomicReference<State> state = new AtomicReference<>(State.NEW);
     private volatile Instant endedAt;
     private volatile String terminationReason;
 
-    public CallSession(String sessionId) {
+    public CallSession(String sessionId, String slotId) {
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId");
+        this.slotId = Objects.requireNonNull(slotId, "slotId");
         this.startedAt = Instant.now();
     }
 
     public String sessionId() {
         return sessionId;
+    }
+
+    public String slotId() {
+        return slotId;
     }
 
     public Instant startedAt() {
@@ -55,4 +61,3 @@ public final class CallSession {
         return terminationReason;
     }
 }
-

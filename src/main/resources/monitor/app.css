@@ -5,6 +5,7 @@
   --line: #d8ddd6;
   --text: #17201a;
   --muted: #667063;
+  --brand: #005eb8;
   --caller: #ffffff;
   --assistant: #bdf0c4;
   --shadow: 0 8px 24px rgba(30, 42, 34, 0.10);
@@ -21,46 +22,54 @@ body {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image: url("/background.png");
+  background-position: top center;
+  background-repeat: repeat-y;
+  background-size: 100vw auto;
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  display: flex;
+  justify-content: center;
 }
 
 .app-shell {
-  display: grid;
-  grid-template-rows: auto 1fr;
   height: 100vh;
   min-height: 0;
+  width: min(768px, 100vw);
+  background: transparent;
 }
 
-.topbar {
+.status-panel {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-  box-shadow: var(--shadow);
-  z-index: 1;
-}
-
-h1 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0;
+  gap: 8px;
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  max-width: calc(100vw - 20px);
+  padding: 6px 8px;
+  border: 1px solid rgba(216, 221, 214, 0.78);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 6px 18px rgba(30, 42, 34, 0.10);
+  backdrop-filter: blur(8px);
+  z-index: 2;
 }
 
 .session-label {
-  margin: 4px 0 0;
+  max-width: 42vw;
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .connection-state {
-  min-width: 96px;
-  padding: 7px 10px;
+  min-width: 82px;
+  padding: 5px 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
@@ -81,10 +90,111 @@ h1 {
   border-color: #f1c6a5;
 }
 
+.session-panel {
+  position: fixed;
+  top: 58px;
+  right: 10px;
+  width: 190px;
+  max-width: 190px;
+  max-height: calc(100vh - 74px);
+  overflow-y: auto;
+  scrollbar-width: none;
+  z-index: 2;
+}
+
+.session-panel::-webkit-scrollbar {
+  display: none;
+}
+
+.session-list {
+  display: grid;
+  gap: 8px;
+}
+
+.session-item {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid rgba(216, 221, 214, 0.82);
+  border-left: 4px solid transparent;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 6px 18px rgba(30, 42, 34, 0.10);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  backdrop-filter: blur(8px);
+}
+
+.session-item:hover,
+.session-item:focus-visible {
+  border-color: rgba(0, 94, 184, 0.45);
+  outline: none;
+}
+
+.session-item.selected {
+  border-color: rgba(0, 94, 184, 0.82);
+  border-left-color: var(--brand);
+  background: rgba(218, 237, 255, 0.92);
+  box-shadow: 0 8px 22px rgba(0, 94, 184, 0.24);
+}
+
+.session-item.selected .session-slot {
+  color: var(--brand);
+}
+
+.session-slot {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-id-short {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-state {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #e7f7e8;
+  color: #0f6b2a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.session-state[data-state="closed"] {
+  background: #eef1ed;
+  color: var(--muted);
+}
+
+.session-list-empty {
+  padding: 9px 10px;
+  border: 1px solid rgba(216, 221, 214, 0.78);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .timeline {
+  height: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px 16px 28px;
+  scrollbar-width: none;
+  padding: 22px 16px 28px;
+}
+
+.timeline::-webkit-scrollbar {
+  display: none;
 }
 
 .message {
@@ -101,7 +211,8 @@ h1 {
 }
 
 .bubble {
-  max-width: min(680px, 78vw);
+  position: relative;
+  max-width: calc(100% * 2 / 3);
   padding: 10px 12px 7px;
   border-radius: 8px;
   box-shadow: 0 2px 6px rgba(30, 42, 34, 0.08);
@@ -113,9 +224,31 @@ h1 {
   border-top-right-radius: 2px;
 }
 
+.caller .bubble::after {
+  position: absolute;
+  top: 0;
+  right: -8px;
+  width: 0;
+  height: 0;
+  border-top: 13px solid var(--caller);
+  border-right: 9px solid transparent;
+  content: "";
+}
+
 .assistant .bubble {
   background: var(--assistant);
   border-top-left-radius: 2px;
+}
+
+.assistant .bubble::before {
+  position: absolute;
+  top: 0;
+  left: -8px;
+  width: 0;
+  height: 0;
+  border-top: 13px solid var(--assistant);
+  border-left: 9px solid transparent;
+  content: "";
 }
 
 .text {
@@ -141,17 +274,68 @@ h1 {
   font-size: 14px;
 }
 
+@media (max-width: 1160px) {
+  .session-panel {
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    width: min(220px, calc(100vw - 20px));
+    max-width: none;
+    max-height: 34vh;
+  }
+}
+
 @media (max-width: 640px) {
-  .topbar {
-    align-items: flex-start;
-    flex-direction: column;
+  .app-shell {
+    width: 100vw;
   }
 
-  .connection-state {
-    align-self: flex-start;
+  .status-panel {
+    top: 8px;
+    right: 8px;
+    gap: 6px;
+    padding: 5px 6px;
+  }
+
+  .session-label {
+    max-width: 48vw;
+  }
+
+  .session-panel {
+    top: 52px;
+    right: 0;
+    bottom: auto;
+    left: 0;
+    width: 100vw;
+    max-height: none;
+    padding: 0 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .session-list {
+    display: flex;
+    gap: 8px;
+    min-width: max-content;
+    padding: 0 0 8px;
+  }
+
+  .session-item {
+    flex: 0 0 156px;
+    min-height: 62px;
+    padding: 8px 9px;
+  }
+
+  .session-list-empty {
+    flex: 0 0 156px;
+    padding: 8px 9px;
+  }
+
+  .timeline {
+    padding: 126px 16px 24px;
   }
 
   .bubble {
-    max-width: 86vw;
+    max-width: calc(100% * 2 / 3);
   }
 }
