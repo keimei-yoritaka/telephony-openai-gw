@@ -2,6 +2,10 @@
 
 作成日: 2026-10-13
 
+## 次の開発への引き継ぎ（2026-10-15）
+
+ユーザーが本スレッドのGPT-Live対応を完了とし、Realtime translation追加を別スレッドで進めることを指定した。次の開発開始時は[Realtime translation開発への引き継ぎ](realtime-translation-handoff.md)を先に読む。本書の開始地点は過去の記録として扱う。GPT-Liveの実API・実通話・RHEL検証結果はまだ報告されておらず、開発目的の完了と検証範囲を区別する。
+
 ## GPT-Live追加の追記（2026-10-13）
 
 - ユーザーがGPT-Live追加計画を承認し、delegationと業務tool連携を対象外に指定した。

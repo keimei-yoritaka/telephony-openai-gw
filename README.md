@@ -207,6 +207,7 @@ RHEL EC2で外部ブラウザから確認する場合は、`monitor.bindAddress:
 
 - [システム設計書](docs/system-design.md)
 - [Realtime / GPT-Liveのvoice設定・一覧](docs/voice-settings.md)
+- [Realtime translation開発への引き継ぎ](docs/realtime-translation-handoff.md)
 - [要件・実装計画](docs/requirements-and-implementation-plan.md)
 - [デプロイメントガイド](docs/deployment-guide.md)
 - [RHELデモ環境への差分反映手順](docs/rhel-update-patch-guide.md)
