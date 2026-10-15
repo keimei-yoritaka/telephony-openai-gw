@@ -1,0 +1,113 @@
+gateway:
+  sessionIds: session-1,session-2,session-3
+
+session.session-1:
+  name: 一番窓口
+  sip.backend: pjsua2
+  sip.bindAddress: 0.0.0.0
+  sip.port: 5070
+  sip.transport: UDP
+  sip.ipVersion: IPv4
+  sip.codec: PCMU
+  sip.preferredCodec: G722
+  sip.codecs: G722,PCMU
+  sip.publicContactAddress: ""
+  sip.rtpPortStart: 40000
+  sip.rtpPortEnd: 41000
+  registration.domain: example.com
+  registration.userName: bot-gateway-1
+  registration.password: ${SIP_REGISTRATION_PASSWORD_1}
+  registration.sipAddress: sip:bot-gateway-1@example.com
+  registration.registryServerAddress: registrar.example.com
+  registration.registryServerPort: 5060
+  openai.apiKey: ${OPENAI_API_KEY}
+  openai.realtimeModel: gpt-realtime
+  openai.voice: coral
+  openai.maxOutputTokens: inf
+  openai.turnDetectionType: semantic_vad
+  openai.turnDetectionEagerness: low
+  openai.turnDetectionServerVadThreshold: 0.5
+  openai.turnDetectionServerVadPrefixPaddingMs: 300
+  openai.turnDetectionServerVadSilenceDurationMs: 1200
+  openai.transcriptLoggingEnabled: true
+  openai.inputTranscriptionModel: gpt-realtime-whisper
+  openai.inputTranscriptionLanguage: ja
+  bot.systemInstructions: "あなたはsession-1の電話応対を行うAIアシスタントです。回答は原則1文、できるだけ短く、相手が話し終わるまで待ってから返答してください。"
+  bot.initialGreeting: "こちらは一番窓口です。ご用件をお話しください。"
+
+session.session-2:
+  name: GPT-Live窓口
+  sip.backend: pjsua2
+  sip.bindAddress: 0.0.0.0
+  sip.port: 5072
+  sip.transport: UDP
+  sip.ipVersion: IPv4
+  sip.codec: PCMU
+  sip.preferredCodec: G722
+  sip.codecs: G722,PCMU
+  sip.publicContactAddress: ""
+  sip.rtpPortStart: 41002
+  sip.rtpPortEnd: 42000
+  registration.domain: example.com
+  registration.userName: bot-gateway-2
+  registration.password: ${SIP_REGISTRATION_PASSWORD_2}
+  registration.sipAddress: sip:bot-gateway-2@example.com
+  registration.registryServerAddress: registrar.example.com
+  registration.registryServerPort: 5060
+  openai.apiKey: ${OPENAI_API_KEY}
+  openai.backend: live
+  openai.liveModel: gpt-live-1
+  openai.liveVoice: marin
+  openai.liveStartBufferFrames: 2
+  openai.transcriptLoggingEnabled: true
+  bot.systemInstructions: "日本語で自然な電話応対をしてください。短い相づちを交え、訂正や言い直しを聞いてください。外部委譲や業務ツールは使わず、会話だけで応対してください。"
+  bot.initialGreeting: "こちらはGPT-Live電話受付です。ご用件をお話しください。"
+
+session.session-3:
+  name: 日英翻訳検証
+  sip.backend: pjsua2
+  sip.bindAddress: 0.0.0.0
+  sip.port: 5074
+  sip.transport: UDP
+  sip.ipVersion: IPv4
+  sip.codec: PCMU
+  sip.preferredCodec: G722
+  sip.codecs: G722,PCMU
+  sip.publicContactAddress: ""
+  sip.rtpPortStart: 42002
+  sip.rtpPortEnd: 43000
+  registration.domain: example.com
+  registration.userName: bot-gateway-3
+  registration.password: ${SIP_REGISTRATION_PASSWORD_3}
+  registration.sipAddress: sip:bot-gateway-3@example.com
+  registration.registryServerAddress: registrar.example.com
+  registration.registryServerPort: 5060
+  openai.apiKey: ${OPENAI_API_KEY}
+  openai.backend: translation
+  openai.translationModel: gpt-realtime-translate
+  openai.translationTargetLanguage: en
+  openai.translationSourceTranscriptEnabled: true
+  openai.translationTranscriptionModel: gpt-realtime-whisper
+  openai.transcriptLoggingEnabled: false
+  # 翻訳ではbot.systemInstructions、bot.initialGreeting、固定voice、VADは不要です。
+
+logging:
+  level: INFO
+
+media:
+  inboundQueueCapacity: 500
+  outboundQueueCapacity: 10000
+
+openai:
+  cancelResponseOnUserSpeech: false
+  dropInputAudioWhileAssistantSpeaking: false
+  bargeInMinSpeechMs: 600
+  bargeInMinRmsDb: -35.0
+  bargeInGraceMsAfterAssistantStarts: 500
+
+monitor:
+  enabled: true
+  bindAddress: 127.0.0.1
+  port: 8080
+  maxEvents: 500
+  sessionHistoryDepth: 10

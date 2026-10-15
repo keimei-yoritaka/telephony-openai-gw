@@ -57,6 +57,15 @@ public final class ConversationEventHub implements ConversationEventPublisher {
     }
 
     @Override
+    public void publishTranslationSnapshot(String sessionId, String kind, String language, String segmentId,
+            String sourceEventId, String text, Instant timestamp, long elapsedMs) {
+        if (text.isBlank()) return;
+        publish(new ConversationEvent(nextId.getAndIncrement(), sessionId,
+                "source".equals(kind) ? "caller" : "assistant", text, timestamp, "", "", false,
+                segmentId, sourceEventId, elapsedMs, elapsedMs, kind, language));
+    }
+
+    @Override
     public List<ConversationEvent> recentTranscripts(String sessionId) { return eventsForSession(sessionId); }
 
     public void publish(ConversationEvent event) {

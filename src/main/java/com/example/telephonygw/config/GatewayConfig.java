@@ -30,7 +30,7 @@ public record GatewayConfig(
             sip.validate("session." + slotId + ".sip");
             registration.validate("session." + slotId + ".registration");
             openAi.validate("session." + slotId + ".openai");
-            bot.validate("session." + slotId + ".bot");
+            if (!openAi.isTranslation()) bot.validate("session." + slotId + ".bot");
         }
     }
 
@@ -122,13 +122,19 @@ public record GatewayConfig(
             String backend,
             String liveModel,
             String liveVoice,
-            int liveStartBufferFrames
+            int liveStartBufferFrames,
+            String translationModel,
+            String translationTargetLanguage,
+            boolean translationSourceTranscriptEnabled,
+            String translationTranscriptionModel
     ) {
         public boolean isLive() { return "live".equals(backend); }
 
-        public String selectedModel() { return isLive() ? liveModel : realtimeModel; }
+        public boolean isTranslation() { return "translation".equals(backend); }
 
-        public String selectedVoice() { return isLive() ? liveVoice : voice; }
+        public String selectedModel() { return isTranslation() ? translationModel : isLive() ? liveModel : realtimeModel; }
+
+        public String selectedVoice() { return isTranslation() ? "dynamic" : isLive() ? liveVoice : voice; }
 
         public void validate() {
             validate("openai");
@@ -137,8 +143,16 @@ public record GatewayConfig(
         public void validate(String prefix) {
             require(prefix + ".apiKey", apiKey);
             require(prefix + ".backend", backend);
-            if (!Set.of("realtime", "live").contains(backend)) {
-                throw new IllegalArgumentException(prefix + ".backend must be realtime or live");
+            if (!Set.of("realtime", "live", "translation").contains(backend)) {
+                throw new IllegalArgumentException(prefix + ".backend must be realtime, live or translation");
+            }
+            if (isTranslation()) {
+                require(prefix + ".translationModel", translationModel);
+                if (!Set.of("en", "ja", "es", "pt", "fr", "ru", "zh", "de", "ko", "hi", "id", "vi", "it").contains(translationTargetLanguage)) {
+                    throw new IllegalArgumentException(prefix + ".translationTargetLanguage must be a supported language code");
+                }
+                if (translationSourceTranscriptEnabled) require(prefix + ".translationTranscriptionModel", translationTranscriptionModel);
+                return;
             }
             if (isLive()) {
                 require(prefix + ".liveModel", liveModel);

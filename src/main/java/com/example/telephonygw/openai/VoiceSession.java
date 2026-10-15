@@ -6,6 +6,7 @@ import java.time.Duration;
 public interface VoiceSession extends AutoCloseable {
     void open();
     boolean appendInputAudio(AudioFrame frame);
+    default boolean isHealthy() { return true; }
     void startInitialGreeting(String greeting);
     boolean isIdle(long nowNanos, Duration idleTimeout);
     @Override void close();

@@ -238,6 +238,8 @@ public final class ConversationMonitorServer implements AutoCloseable {
                 + ",\"responseId\":\"" + json(event.responseId()) + "\""
                 + ",\"segmentId\":\"" + json(event.segmentId()) + "\""
                 + ",\"sourceEventId\":\"" + json(event.sourceEventId()) + "\""
+                + ",\"transcriptKind\":\"" + json(event.transcriptKind()) + "\""
+                + ",\"targetLanguage\":\"" + json(event.targetLanguage()) + "\""
                 + ",\"sourceStartMs\":" + event.sourceStartMs()
                 + ",\"sourceEndMs\":" + event.sourceEndMs()
                 + ",\"final\":" + event.finalTranscript()

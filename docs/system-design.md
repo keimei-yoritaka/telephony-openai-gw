@@ -2,7 +2,7 @@
 
 ## 目的
 
-本書は、`telephony-openai-gw`の現行実装を後から追跡・変更できるように整理した設計ドキュメントである。SIP/RTP、OpenAI Realtime API / GPT-Live、会話モニターUI、マルチセッション制御、デプロイ構成を対象とする。
+本書は、`telephony-openai-gw`の現行実装を後から追跡・変更できるように整理した設計ドキュメントである。SIP/RTP、OpenAI Realtime API / GPT-Live / Realtime translation、会話モニターUI、マルチセッション制御、デプロイ構成を対象とする。
 
 仕様変更時は、実装・設定例・運用手順に加えて、本書とdraw.io図も同じ変更単位で更新する。
 
@@ -20,10 +20,11 @@ draw.ioで編集できる図は以下に格納する。
 - `Audio Queue Detail`: inbound queue / outbound queueと音声処理の詳細
 - `OpenAI Realtime Sequence`: OpenAI Realtime APIとのWebSocketイベントシーケンス
 - `OpenAI Live Sequence`: GPT-Liveの開始、音声、transcript、終了シーケンス
+- `OpenAI Translation Sequence`: 専用translationの設定、継続入力、字幕、終了シーケンス
 
 ## スコープ
 
-本Gatewayは、SIP/RTP電話音声とOpenAI Realtime API / GPT-Liveを接続する軽量なJavaアプリケーションである。PBX機能は持たず、設定された複数の固定セッションスロットごとにSIP UASとしてINVITEを受け、通話ごとに設定されたbackendのOpenAI voice sessionを作成する。
+本Gatewayは、SIP/RTP電話音声とOpenAI Realtime API / GPT-Live / Realtime translationを接続する軽量なJavaアプリケーションである。PBX機能は持たず、設定された複数の固定セッションスロットごとにSIP UASとしてINVITEを受け、通話ごとに設定されたbackendのOpenAI voice sessionを作成する。
 
 ### 対象
 
@@ -31,7 +32,7 @@ draw.ioで編集できる図は以下に格納する。
 - UDP/IPv4によるSIP/RTP待ち受け
 - PJSUA2 Java bindingによるSIP/RTP制御
 - PCMU/G.722のSIP SDP offer/answerとPCM音声ブリッジ
-- OpenAI Realtime API / GPT-Liveへの音声転送と音声応答受信
+- OpenAI Realtime API / GPT-Live / Realtime translationへの音声転送と音声応答受信
 - 通話セッションごとの音声キュー分離
 - 会話transcriptログとブラウザモニターUI
 - RHEL 8.10およびmacOSでの稼働
@@ -52,9 +53,9 @@ flowchart LR
   Registrar["SIP Registrar"] <-->|"REGISTER / rport"| PJSIP
   PJSIP --> Session["CallSessionManager"]
   PJSIP <-->|"PCM frames"| Audio["AudioBridge"]
-  Audio -->|"Inbound PCM"| Realtime["VoiceSessionManager / RealtimeSession / LiveSession"]
+  Audio -->|"Inbound PCM"| Realtime["VoiceSessionManager / RealtimeSession / LiveSession / TranslationSession"]
   Realtime -->|"Outbound PCM"| Audio
-  Realtime <-->|"WebSocket audio/events"| OpenAI["OpenAI Realtime API / GPT-Live"]
+  Realtime <-->|"WebSocket audio/events"| OpenAI["OpenAI Realtime API / GPT-Live / Realtime translation"]
   Realtime --> MonitorHub["ConversationEventHub"]
   MonitorHub --> Monitor["ConversationMonitorServer"]
   Browser["Browser"] <-->|"HTTP / SSE"| Monitor
@@ -74,10 +75,12 @@ flowchart LR
 | `CallSessionManager` | 通話セッション生成・終了・最近のセッション履歴保持 |
 | `AudioBridge` | セッション別inbound/outbound audio queueとsample rate保持 |
 | `VoiceSessionManager` | スロット別backendの選択、voice sessionの生成、音声転送worker・再試行管理 |
-| `VoiceSession` | Realtime / Live共通のsession lifecycle interface |
+| `VoiceSession` | Realtime / Live / translation共通のsession lifecycle interface |
 | `RealtimeSession` | OpenAI Realtime WebSocket、音声送受信、transcript、barge-in制御 |
+| `TranslationSession` | 専用翻訳WebSocket、入力clock・無音補完、字幕、終了確認 |
+| `TranslationTranscriptAssembler` | 原文・翻訳の独立snapshotとevent ID重複対策 |
 | `LiveSession` | GPT-Live primary WebSocket、音声対話、挨拶、transcript、usage、終了確認 |
-| `LiveAudioDecoder` / `LiveTranscriptAssembler` | PCM delta境界の保持、話者別の表示segment集約 |
+| `StreamingAudioDecoder` / `LiveTranscriptAssembler` | PCM delta境界の保持、話者別の表示segment集約 |
 | `ConversationEventHub` | 会話transcript eventの保持とSSE subscriber通知 |
 | `ConversationMonitorServer` | ブラウザ向けHTTP/SSE APIと静的asset配信 |
 
@@ -222,7 +225,7 @@ OpenAI Realtime APIとの詳細なWebSocketイベント順序はdraw.ioの`OpenA
 
 `LiveSession`は`wss://api.openai.com/v1/live/sessions`へ接続し、`session.start`でmono PCM16LE / 24kHz、instructions、voice、`store: false`を設定する。`session.started`を確認するまで音声を送らず、通話別inbound queueで保持する。開始失敗はtimeoutを含めて再試行管理へ通知する。
 
-入力は`session.input_audio.append`、出力は`session.output_audio.delta`。`LiveAudioDecoder`がdelta境界に跨るPCMを保持し、24kHzの20ms frameを組み立てた後に通話sample rateへ変換する。60ms以上の出力gapでは端数frameを無音paddingして送る。奇数byteの残りは次のdeltaに保持する。
+入力は`session.input_audio.append`、出力は`session.output_audio.delta`。`StreamingAudioDecoder`がdelta境界に跨るPCMを保持し、24kHzの20ms frameを組み立てた後に通話sample rateへ変換する。60ms以上の出力gapでは端数frameを無音paddingして送る。奇数byteの残りは次のdeltaに保持する。
 
 Liveには発話ごとの生成完了通知がない。既定2 frameの開始bufferを使い、最後のdeltaから100ms以上経過した場合は短い残りframeも再生する。queue空を実再生状態の区切りとして扱い、発話完了を意味するeventは作らない。queue滞留時間とPCM音声活動の目安をRTP送出側で計測する。
 
@@ -251,6 +254,50 @@ Liveは通話終了まで接続を保持し、Realtimeの15秒idle closeは適�
 Live JSONの解釈にGson 2.13.2を使用する。GradleはMaven Centralを利用し、直接javacするscriptは`java-deps-classpath.sh`でSHA-256確認済みjarを`.deps/java`へ取得する。jarはGit管理外。
 
 公式仕様: [Live primary WebSocket](https://developers.openai.com/api/reference/resources/live/primary-websocket)、[Managing sessions](https://developers.openai.com/api/docs/guides/live-conversations)。実装・検証の範囲は[GPT-Live追加計画](gpt-live-implementation-plan.md)を参照する。
+
+## Realtime translation backend設計
+
+`session.<slotId>.openai.backend`は`realtime`、`live`、`translation`を選択できる。未指定は従来どおり`realtime`。translationは専用APIを使い、既存Realtime / Liveへ翻訳promptを追加する方式とは区別する。今回の用途は日本語→英語の片方向翻訳を同じ電話へ返す検証であり、別通話への中継や双方向通訳は実装しない。
+
+### 設定
+
+| キー（各スロットの`openai.`配下） | 既定値・制約 |
+| --- | --- |
+| `translationModel` | `gpt-realtime-translate` |
+| `translationTargetLanguage` | 必須。例は`en`。`en,ja,es,pt,fr,ru,zh,de,ko,hi,id,vi,it` |
+| `translationSourceTranscriptEnabled` | `true`。原文字幕の有効化 |
+| `translationTranscriptionModel` | `gpt-realtime-whisper`。原文字幕有効時に必須 |
+| `transcriptLoggingEnabled` | 既存共通キー。字幕のログ出力を制御。設定例は`false` |
+
+入力言語はAPIの動的検出であり、日本語以外をGatewayが排除するわけではない。translationには固定voiceやcustom promptを送らず、動的voice adaptationを利用する。bot instructions / greetingは不要で、初回挨拶要求は何も送信しない。Realtime用のvoice・VAD・maxOutputTokensやLive設定はtranslationへ送信しない。warm-upはRealtimeスロットのみ対象とする。
+
+### 接続と継続音声
+
+`TranslationSession`は`wss://api.openai.com/v1/realtime/translations?model=...`へ接続する。`session.created`受信後に目的言語と任意の原文transcriptionを`session.update`で送信し、`session.updated`の目的言語が一致することを確認してから入力を開始する。接続・作成・設定確認はそれぞれ最大10秒、送信は5秒、送信backlogは最大100件。機密値を含むremote error本文はログへ出さず、codeを記録する。
+
+既存の通話別inbound queueとforwarderで受けた8kHz / 16kHzの20ms PCMを24kHzへ変換し、translation内の最大100 frame（2秒）のqueueへ入れる。開始前入力は共通inbound queueに保持される。入力clockは開始後60msのjitter猶予を置き、20msごとに1 frameを消費する。queueが空なら無音frameを補完するため、native側が無音を供給しない場合も継続送信できる。受信済みの無音に加えて補完することはないが、遅れて到着した入力は既送信の無音を置換せず遅延して送信される。これによる遅延は実機で評価する。
+
+10 frame（200ms、9600 byte）を`session.input_audio_buffer.append`で送る。clockが1秒超停止した場合やqueue超過は黙って音声を間引かずsession失敗にする。通信失敗は再試行へ通知し、15秒のcooldown後に新sessionを作る。入力が来ない場合もforwarderがtranslationの健全性を確認する。無発話による15秒idle closeはしない。履歴や過去音声は再送せず、切断中の入力は破棄し、欠落をモニターの状態表示で知らせる。
+
+### 出力と共通音声方針
+
+`session.output_audio.delta`はmono PCM16 / 24kHzを期待し、明示された異なるformat / rate / channelsは拒否する。可変長・奇数byte境界を`StreamingAudioDecoder`で保持し、20ms frame化後に8kHz / 16kHzへ変換する。このdecoderは既存Liveのdecoderを共通名へ変更したもので、Liveの処理は維持する。
+
+`AudioBridge`はbackend名と継続音声の再生方針を保持する。translationをLiveとして登録しない。translationの開始bufferは2 frame、最終deltaから100ms以上のgapでdecoderの端数を無音paddingして再生する。gapやqueue空はAPIの翻訳完了を意味しない。Realtimeの開始8 frameとbarge-in、Liveの設定可能な開始bufferと60msのdecoder flushは従来どおり。
+
+translationは翻訳音声再生中も入力を継続し、Realtimeの入力破棄・barge-in閾値・`response.cancel`を適用しない。通話終了後のqueue再生成を拒否する共通保護は維持する。`openai_translation_first_audio`は接続開始から最初の訳音声まで、`openai_translation_playout`はRTP再生時のqueue滞留を記録する。前者は発話開始からの純粋な翻訳遅延とは区別する。
+
+### 字幕と状態表示
+
+`session.input_transcript.delta` / `session.output_transcript.delta`を原文・翻訳別に連結し、表示開始から4秒または追加後512文字超でアプリ側segmentを区切る。空白を自動追加しない。`sourceEventId`を直近4096件保持して重複受信を除外する。`elapsed_ms`は任意の整列情報として保持し、重複判定や原文・訳文の一対一対応には使わない。
+
+monitor eventには互換性を保って`transcriptKind`（`source` / `translation` / `status`、従来eventは空）と`targetLanguage`を追加する。原文は右、翻訳は左に表示し「原文」「翻訳（英語）」を明記する。`status`は接続済みまたは切断・欠落の状態を示し、字幕とは区別する。全て`final: false`の表示snapshotであり、API item ID / response IDは作らない。再接続では別のgeneration IDを使う。Realtime確定字幕とLive snapshotの既存処理、HTTP履歴とSSEの競合処理を維持する。
+
+### 終了
+
+SIP切断時は共通queueを停止し、別workerで入力clockを停止する。内部に受理済みの入力と200ms未満の端数を一度だけ送信し、`session.close`を送る。最大15秒、残字幕と`session.closed`を受信する。SIP切断後に届く音声は再生しない。正常確認とtimeout / transport切断は区別して記録し、その後socketを解放する。
+
+公式仕様: [Translation guide](https://developers.openai.com/api/docs/guides/realtime-translation)、[Client events](https://developers.openai.com/api/reference/resources/realtime/translation-client-events)、[Server events](https://developers.openai.com/api/reference/resources/realtime/translation-server-events)。検証範囲は[実装計画・記録](realtime-translation-implementation-plan.md)を参照する。
 
 ## Barge-in制御（Realtime backend）
 

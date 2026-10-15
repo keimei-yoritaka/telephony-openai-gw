@@ -42,7 +42,7 @@ public final class VoiceIntegrationCheck {
         bridge.configureSessionBackend("audio", true, 2);
         for (int rate : List.of(8000, 16000)) {
             bridge.setSessionSampleRate("audio", rate);
-            LiveAudioDecoder decoder = new LiveAudioDecoder(bridge, "audio");
+            StreamingAudioDecoder decoder = new StreamingAudioDecoder(bridge, "audio");
             byte[] source = new byte[1920];
             for (int i = 0; i < source.length; i++) source[i] = (byte) (i * 7);
             for (int offset = 0; offset < source.length;) {
@@ -151,6 +151,7 @@ public final class VoiceIntegrationCheck {
             check(delayed.closed.await(2, java.util.concurrent.TimeUnit.SECONDS), "late startup cannot register a ended call");
             check(!delayed.greeted, "closed call gets no greeting");
         }
+        TranslationIntegrationCheck.run();
         System.out.println("Voice integration checks passed: " + checks);
     }
 

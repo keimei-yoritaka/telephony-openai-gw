@@ -5,13 +5,13 @@ import java.util.Arrays;
 import java.util.Base64;
 
 /** Preserve PCM samples and resampling phase across arbitrary audio delta boundaries. */
-final class LiveAudioDecoder {
+final class StreamingAudioDecoder {
     private static final int INPUT_FRAME_BYTES = 24000 * 20 / 1000 * 2;
     private final AudioBridge bridge;
     private final String sessionId;
     private byte[] pending = new byte[0];
 
-    LiveAudioDecoder(AudioBridge bridge, String sessionId) {
+    StreamingAudioDecoder(AudioBridge bridge, String sessionId) {
         this.bridge = bridge;
         this.sessionId = sessionId;
     }

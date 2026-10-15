@@ -88,10 +88,14 @@ public final class GatewayConfigLoader {
                         optionalValue(values, prefix + "openai.backend", "realtime").toLowerCase(Locale.ROOT),
                         optionalValue(values, prefix + "openai.liveModel", "gpt-live-1"),
                         optionalValue(values, prefix + "openai.liveVoice", "marin"),
-                        intValue(values, prefix + "openai.liveStartBufferFrames", 2)
+                        intValue(values, prefix + "openai.liveStartBufferFrames", 2),
+                        optionalValue(values, prefix + "openai.translationModel", "gpt-realtime-translate"),
+                        optionalValue(values, prefix + "openai.translationTargetLanguage"),
+                        booleanValue(values, prefix + "openai.translationSourceTranscriptEnabled", true),
+                        optionalValue(values, prefix + "openai.translationTranscriptionModel", "gpt-realtime-whisper")
                 ),
                 new GatewayConfig.BotConfig(
-                        value(values, prefix + "bot.systemInstructions"),
+                        optionalValue(values, prefix + "bot.systemInstructions"),
                         optionalValue(values, prefix + "bot.initialGreeting", "こちらはAI電話受付です。ご用件をお話しください。")
                 )
         );

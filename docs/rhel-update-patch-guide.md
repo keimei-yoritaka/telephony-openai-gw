@@ -12,6 +12,76 @@
 - `telephony-openai-gw.service`がsystemdに登録済み
 - `config/gateway.local.yaml`がRHEL環境用に作成済み
 
+## Realtime translation ExperimentalをGitで適用する場合
+
+今回のtranslation更新は`codex/experimental`を対象とする。以下を今回の適用手順として使い、後半の古いmulti-session更新に記載したbranch名・commit・単独javacコマンドは使用しない。
+
+今回の変更はJavaソースとUI・設定・文書であり、既存のRHEL向けPJSIP/PJSUA2成果物が正常ならnative再buildは通常不要。既存`.deps/`、機密設定、ログは保持する。起動scriptはJavaソースを起動時にコンパイルする。
+
+### 停止・退避・ソース更新
+
+```sh
+cd /opt/telephony-openai-gw
+sudo systemctl show telephony-openai-gw -p ExecStart --value
+sudo -u telephonygw git status --short
+sudo systemctl stop telephony-openai-gw
+```
+
+表示された`ExecStart`から実際の設定先を確認し、そのファイルを退避する。提供unitをそのまま使っている場合は次のとおり。`config/gateway.local.yaml`を使う環境では、そのパスに読み替える。
+
+```sh
+sudo cp -p /etc/telephony-openai-gw/gateway.yaml /etc/telephony-openai-gw/gateway.yaml.bak-$(date +%Y%m%d%H%M%S)
+sudo -u telephonygw git fetch origin
+sudo -u telephonygw git checkout codex/experimental
+sudo -u telephonygw git pull --ff-only origin codex/experimental
+sudo -u telephonygw git log -1 --oneline
+```
+
+管理対象ソースにローカル変更があれば上書きせず、差分を確認してから更新する。`reset --hard`や`clean`による一括削除は行わない。GitHub認証はRHEL上のgit実行ユーザーで必要となる。更新先はExperimentalであり、`main`への切替・merge、Stableタグの変更は行わない。
+
+### 実行設定
+
+検証に使う既存の`session.<slotId>:`内で、SIP / RegistrationとAPI keyを維持し、以下を設定する。同じキーを重複記載せず、既存のbackend値を置き換える。
+
+```yaml
+  openai.backend: translation
+  openai.translationModel: gpt-realtime-translate
+  openai.translationTargetLanguage: en
+  openai.translationSourceTranscriptEnabled: true
+  openai.translationTranscriptionModel: gpt-realtime-whisper
+  openai.transcriptLoggingEnabled: false
+```
+
+`config/gateway.translation.example.yaml`はRealtime / Live / translationの3方式混在例。実環境設定全体を例で上書きせず、必要項目を反映する。専用translationではbot instructions / greeting、固定voice、Realtime用VAD・barge-in設定を使わない。自発的な挨拶はなく、日本語音声を英語へ訳して同じ電話へ返す。
+
+原文・翻訳字幕を見るには`monitor.enabled: true`が必要。字幕ログを無効にしてもモニターには表示される。既存スロットを切り替えるだけならSIP / RTP port変更は不要。新スロットを追加する場合は個別のSIP accountとport範囲を割り当て、必要な通信許可を確認する。OpenAI向けは既存のHTTPS / WebSocket接続先`api.openai.com:443`を使い、専用パス`/v1/realtime/translations`へ接続する。
+
+### 確認・起動
+
+```sh
+sudo -u telephonygw sh scripts/java-deps-classpath.sh
+sudo -u telephonygw scripts/check-config.sh /etc/telephony-openai-gw/gateway.yaml
+sudo -u telephonygw scripts/check-voice.sh
+sudo -u telephonygw scripts/check-pjsua2-java.sh
+sudo systemctl start telephony-openai-gw
+sudo systemctl status telephony-openai-gw
+sudo journalctl -u telephony-openai-gw -f
+```
+
+設定確認のパスも実際の`ExecStart`に合わせる。API keyを環境変数から読む場合、systemdは`/etc/sysconfig/telephony-openai-gw`を読み込むが、手動のcheckでは自動読込しない。未展開placeholderのままでも設定checkが成功する場合があるため、実API認証の成功とは区別する。secretファイルを表示・共有しない。
+
+Gson 2.13.2はGPT-Liveと共通で追加依存なし。未配置の場合のみMaven Centralから取得する。`check-pjsua2-java.sh`が失敗し、RHEL側のnative成果物に不足がある場合は`sudo -u telephonygw scripts/build-pjsip-rhel.sh`で再buildする。macOSの`.deps/`や`build/`は転送しない。unit変更は今回ないため、通常は再配置や`daemon-reload`は不要。
+
+通話で次を確認する。
+
+- `openai_translation_session_started`で開始し、日本語発話に英語音声が返る。
+- モニターに「原文」と「翻訳（英語）」が表示される。
+- 長い無音後も翻訳でき、他のRealtime / Liveスロットと混線しない。
+- 切断時は`openai_translation_session_closed confirmed=true`を確認する。終了確認は最大15秒で、未確認の場合もログで区別する。
+- 障害時は`openai_translation_error` / `openai_translation_transport_failed`を確認する。
+
+RHEL実機の成功は未確認である。切り戻す場合は停止後、適用前に記録したcommitと退避した設定の両方を戻してから起動する。
+
 ## GPT-Live Experimentalを追加適用する場合
 
 以下の既存手順はmulti-session更新時の記録である。GPT-Live追加は`codex/experimental`を対象にし、Stableや`main`へは反映しない。source / scriptと、実環境向けに調整したLive設定を適用する。

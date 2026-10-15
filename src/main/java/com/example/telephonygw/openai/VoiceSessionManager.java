@@ -99,6 +99,13 @@ public final class VoiceSessionManager implements AutoCloseable {
             session.open();
             return session;
         }
+        if (config.isTranslation()) {
+            TranslationSession session = new TranslationSession(callSessionId, config, audioBridge,
+                    conversationEventPublisher, httpClient,
+                    () -> sessionConfigs.get(callSessionId) == runtimeConfig && initialized.get());
+            session.open();
+            return session;
+        }
         if (config.isLive()) {
             LiveSession session = new LiveSession(callSessionId, config, botConfig, audioBridge,
                     conversationEventPublisher, httpClient,
@@ -136,7 +143,7 @@ public final class VoiceSessionManager implements AutoCloseable {
     }
 
     private void warmUp() {
-        SessionRuntimeConfig runtimeConfig = slotConfigs.values().stream().filter(slot -> !slot.openAiConfig().isLive()).findFirst().orElse(null);
+        SessionRuntimeConfig runtimeConfig = slotConfigs.values().stream().filter(slot -> "realtime".equals(slot.openAiConfig().backend())).findFirst().orElse(null);
         if (runtimeConfig == null) {
             return;
         }
@@ -188,8 +195,8 @@ public final class VoiceSessionManager implements AutoCloseable {
         }
         SessionRuntimeConfig runtimeConfig = requireSlotConfig(slotId);
         synchronized (sessionConfigs) { sessionConfigs.put(callSessionId, runtimeConfig); }
-        audioBridge.configureSessionBackend(callSessionId, runtimeConfig.openAiConfig().isLive(),
-                runtimeConfig.openAiConfig().liveStartBufferFrames());
+        audioBridge.configureSessionBackend(callSessionId, runtimeConfig.openAiConfig().backend(),
+                runtimeConfig.openAiConfig().isTranslation() ? 2 : runtimeConfig.openAiConfig().liveStartBufferFrames());
         startForwardingWorker(callSessionId, slotId);
         Thread starter = new Thread(
                 () -> startSessionAsync(callSessionId, reason),
@@ -276,6 +283,7 @@ public final class VoiceSessionManager implements AutoCloseable {
             try {
                 AudioFrame frame = audioBridge.pollInbound(sessionId);
                 if (frame == null) {
+                    recoverTranslation(sessionId);
                     closeIdleSession(sessionId);
                     Thread.sleep(FORWARDER_IDLE_SLEEP_MILLIS);
                     continue;
@@ -290,6 +298,22 @@ public final class VoiceSessionManager implements AutoCloseable {
                         "OpenAI audio forwarding loop failed: sessionId={0}, error={1}",
                         sessionId, e.getMessage());
             }
+        }
+    }
+
+    private void recoverTranslation(String sessionId) {
+        SessionRuntimeConfig config = sessionConfigs.get(sessionId);
+        if (config == null || !config.openAiConfig().isTranslation()) return;
+        VoiceSession current = sessions.get(sessionId);
+        if (current != null && !current.isHealthy() && sessions.remove(sessionId, current)) {
+            audioBridge.clearOutbound(sessionId);
+            audioBridge.clearInbound(sessionId);
+            markSessionRetry(sessionId, null);
+            closeAsync(current);
+        }
+        if (!isRetryCoolingDown(sessionId)) {
+            try { sessionFor(sessionId); }
+            catch (RuntimeException error) { if (sessionConfigs.containsKey(sessionId)) markSessionRetry(sessionId, error); }
         }
     }
 

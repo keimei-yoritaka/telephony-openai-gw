@@ -11,7 +11,7 @@ Stableバージョンは`v0.1.0`です。[リリースノート](docs/releases/v
 - GitHub Repositoryは`telephony-openai-gw`として管理しています。
 - SIP backendは`placeholder`と`pjsua2`を設定で切り替えられます。
 - PJSUA2 backendでは、複数の固定セッションスロットごとにUDP transport、SIP Account、Registrationを作成します。
-- 各セッションスロットは最大1コールを受け付け、選択したRealtime / Live sessionと1:1で紐付きます。
+- 各セッションスロットは最大1コールを受け付け、選択したRealtime / Live / translation sessionと1:1で紐付きます。
 - OpenAI voice、system instructions、initial greetingはセッションスロットごとに設定できます。
 - inbound/outbound audio queueは通話セッションごとに分離し、capacityは`media`設定で共通値として指定できます。
 - OpenAIへのinbound音声転送workerは通話セッションごとに起動します。
@@ -44,6 +44,33 @@ scripts/run-pjsua2-local.sh config/gateway.local.yaml
 Live開始時の`openai_live_session_started`、RTP送出の`openai_live_playout`（queueMs、audioActive）、終了の`openai_live_session_closed`を確認できます。`openai_live_usage`は累積秒で、更新値を足し合わせません。Liveの音声費用はsession時間に基づくため、電話の待ち時間も含めて評価してください。[公式仕様](https://developers.openai.com/api/docs/guides/live-conversations)
 
 設定例の読み込み、オフラインsession/UIテスト、PJSUA2込みコンパイルを確認済みです。実API権限、音声疎通、日本語の自然さ、実通話、RHEL実機、ブラウザ外観は未検証です。[詳細計画](docs/gpt-live-implementation-plan.md)を参照してください。
+
+## ExperimentalのRealtime translation
+
+`openai.backend`はスロットごとに`realtime`（省略時）、`live`、`translation`から選択できます。`translation`は専用の`gpt-realtime-translate`へ接続し、日本語入力の英語訳を同じ電話へ返す検証用backendです。原文字幕と翻訳字幕は会話モニターで区別して表示します。自発的な挨拶・AI応対は行いません。
+
+```yaml
+session.session-3:
+  openai.backend: translation
+  openai.apiKey: ${OPENAI_API_KEY}
+  openai.translationModel: gpt-realtime-translate
+  openai.translationTargetLanguage: en
+  openai.translationSourceTranscriptEnabled: true
+  openai.translationTranscriptionModel: gpt-realtime-whisper
+  openai.transcriptLoggingEnabled: false
+```
+
+完全な3方式混在例は[config/gateway.translation.example.yaml](config/gateway.translation.example.yaml)です。既存設定の対応スロットに上記を反映して使います。目的言語は必須で、入力言語はAPIが自動検出します。固定voice、bot instructions / greeting、Realtime用VAD・barge-in・送話中入力破棄はtranslationへ適用しません。原文字幕は既定で有効です。`transcriptLoggingEnabled: false`でもモニターの字幕は表示します。
+
+```sh
+scripts/check-config.sh config/gateway.translation.example.yaml
+scripts/check-voice.sh
+node src/test/js/monitor-check.cjs
+```
+
+無音も含めて音声を継続送信します。SIPを切断すると最長15秒、APIの終了確認と残字幕の受信を別workerで行います。再接続中の音声は欠落し、過去の音声・会話は再送しません。同じ言語の入力を復唱する動作は保証されません。電話スピーカーからの回り込みは端末側も含めて検証してください。
+
+これは1通話の返送検証であり、別通話の相手への中継や双方向の電話通訳は含みません。実APIの権限・翻訳品質・実通話・RHEL実機は未検証です。[実装計画・検証記録](docs/realtime-translation-implementation-plan.md)と[公式translation仕様](https://developers.openai.com/api/docs/guides/realtime-translation)を参照してください。
 
 ## ローカル確認
 

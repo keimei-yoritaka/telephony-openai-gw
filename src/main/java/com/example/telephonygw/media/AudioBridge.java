@@ -23,8 +23,9 @@ public final class AudioBridge {
     private final Map<String, AudioQueue> inboundQueues = new ConcurrentHashMap<>();
     private final Map<String, AudioQueue> outboundQueues = new ConcurrentHashMap<>();
     private final Map<String, Integer> sessionSampleRates = new ConcurrentHashMap<>();
-    private final Map<String, Long> liveLastAudioNanos = new ConcurrentHashMap<>();
-    private final Map<String, Integer> liveStartBuffers = new ConcurrentHashMap<>();
+    private final Map<String, String> sessionBackends = new ConcurrentHashMap<>();
+    private final Map<String, Long> continuousLastAudioNanos = new ConcurrentHashMap<>();
+    private final Map<String, Integer> continuousStartBuffers = new ConcurrentHashMap<>();
     private final Set<String> outboundPlayoutSessions = ConcurrentHashMap.newKeySet();
     private final Set<String> outboundCompleteSessions = ConcurrentHashMap.newKeySet();
     private final AtomicLong inboundSequence = new AtomicLong();
@@ -38,23 +39,36 @@ public final class AudioBridge {
     }
 
     public void configureSessionBackend(String sessionId, boolean live, int startBufferFrames) {
+        configureSessionBackend(sessionId, live ? "live" : "realtime", startBufferFrames);
+    }
+
+    public void configureSessionBackend(String sessionId, String backend, int startBufferFrames) {
         synchronized (lifecycleLock) {
             activeAudioSessions.add(sessionId);
-            if (live) liveStartBuffers.put(sessionId, startBufferFrames);
-            else liveStartBuffers.remove(sessionId);
+            sessionBackends.put(sessionId, backend);
+            if (!"realtime".equals(backend)) continuousStartBuffers.put(sessionId, startBufferFrames);
+            else continuousStartBuffers.remove(sessionId);
         }
     }
 
-    public void markLiveAudioReceived(String sessionId, long nowNanos) { liveLastAudioNanos.put(sessionId, nowNanos); }
+    public void markContinuousAudioReceived(String sessionId, long nowNanos) {
+        synchronized (lifecycleLock) {
+            if (activeAudioSessions.contains(sessionId)) continuousLastAudioNanos.put(sessionId, nowNanos);
+        }
+    }
 
-    public boolean isLiveOutputQuiet(String sessionId) {
-        Long last = liveLastAudioNanos.get(sessionId);
+    public boolean isContinuousOutputQuiet(String sessionId) {
+        Long last = continuousLastAudioNanos.get(sessionId);
         return last != null && System.nanoTime() - last > 100_000_000L;
     }
 
-    public boolean isLiveSession(String sessionId) { return liveStartBuffers.containsKey(sessionId); }
+    public boolean isLiveSession(String sessionId) { return "live".equals(sessionBackend(sessionId)); }
 
-    public int outboundStartBufferFrames(String sessionId) { return liveStartBuffers.getOrDefault(sessionId, 8); }
+    public String sessionBackend(String sessionId) { return sessionBackends.getOrDefault(sessionId, "realtime"); }
+
+    public boolean isContinuousSession(String sessionId) { return continuousStartBuffers.containsKey(sessionId); }
+
+    public int outboundStartBufferFrames(String sessionId) { return continuousStartBuffers.getOrDefault(sessionId, 8); }
 
     public void initialize() {
         if (initialized.compareAndSet(false, true)) {
@@ -173,7 +187,7 @@ public final class AudioBridge {
     }
 
     public int clearInboundForAssistantSpeaking(String sessionId) {
-        if (!dropInputAudioWhileAssistantSpeaking || isLiveSession(sessionId)) {
+        if (!dropInputAudioWhileAssistantSpeaking || isContinuousSession(sessionId)) {
             return 0;
         }
         int clearedFrames = clearInbound(sessionId);
@@ -198,8 +212,9 @@ public final class AudioBridge {
     private void removeSessionQueuesActive(String sessionId) {
         markOutboundPlayoutInactive(sessionId);
         clearOutboundComplete(sessionId);
-        liveLastAudioNanos.remove(sessionId);
-        liveStartBuffers.remove(sessionId);
+        continuousLastAudioNanos.remove(sessionId);
+        continuousStartBuffers.remove(sessionId);
+        sessionBackends.remove(sessionId);
         inboundQueues.remove(sessionId);
         outboundQueues.remove(sessionId);
     }
@@ -229,7 +244,7 @@ public final class AudioBridge {
     }
 
     public boolean shouldDropInboundForAssistantSpeaking(String sessionId) {
-        return !isLiveSession(sessionId) && dropInputAudioWhileAssistantSpeaking && isOutboundPlayoutActive(sessionId);
+        return !isContinuousSession(sessionId) && dropInputAudioWhileAssistantSpeaking && isOutboundPlayoutActive(sessionId);
     }
 
     public boolean isOutboundComplete(String sessionId) {
@@ -276,8 +291,9 @@ public final class AudioBridge {
                     "outboundDepth", outboundDepth);
             synchronized (lifecycleLock) {
                 activeAudioSessions.clear();
-                liveStartBuffers.clear();
-                liveLastAudioNanos.clear();
+                continuousStartBuffers.clear();
+                sessionBackends.clear();
+                continuousLastAudioNanos.clear();
                 inboundQueues.clear();
                 outboundQueues.clear();
             }

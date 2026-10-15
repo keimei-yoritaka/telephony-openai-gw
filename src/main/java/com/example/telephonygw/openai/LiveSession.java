@@ -41,7 +41,7 @@ public final class LiveSession implements VoiceSession {
     private final BooleanSupplier callActive;
     private final Function<WebSocket.Listener, CompletableFuture<WebSocket>> connector;
     private final Duration closeTimeout;
-    private final LiveAudioDecoder decoder;
+    private final StreamingAudioDecoder decoder;
     private final LiveTranscriptAssembler transcripts;
     private final CompletableFuture<Void> ready = new CompletableFuture<>();
     private final CompletableFuture<Void> finalized = new CompletableFuture<>();
@@ -79,7 +79,7 @@ public final class LiveSession implements VoiceSession {
         this.callActive = callActive;
         this.connector = connector;
         this.closeTimeout = closeTimeout;
-        this.decoder = new LiveAudioDecoder(bridge, id);
+        this.decoder = new StreamingAudioDecoder(bridge, id);
         this.transcripts = new LiveTranscriptAssembler(id, publisher);
         this.timer = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "openai-live-audio-tail");
@@ -258,7 +258,7 @@ public final class LiveSession implements VoiceSession {
                         "fromConnectMs", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos));
             }
             lastAudioNanos = System.nanoTime();
-            bridge.markLiveAudioReceived(callSessionId, lastAudioNanos);
+            bridge.markContinuousAudioReceived(callSessionId, lastAudioNanos);
             decoder.append(JsonCodec.string(event, "delta"));
         } else if (type.equals("session.input_transcript.delta") || type.equals("session.output_transcript.delta")) {
             String speaker = type.equals("session.input_transcript.delta") ? "caller" : "assistant";

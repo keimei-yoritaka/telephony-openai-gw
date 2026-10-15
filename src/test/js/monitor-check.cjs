@@ -56,6 +56,15 @@ assert.equal(timeline.children[1].querySelector('.text').textContent, '予約を
 run('renderEvent(one)');
 assert.equal(timeline.children.length, 2);
 
+sandbox.trSource = { ...event(4, '今日は晴れ', 'caller', 'tr-source'), transcriptKind: 'source', targetLanguage: 'en' };
+sandbox.trTarget = { ...event(5, 'It is sunny', 'assistant', 'tr-target'), transcriptKind: 'translation', targetLanguage: 'en' };
+run('renderEvent(trSource); renderEvent(trTarget); renderEvent(trTarget)');
+assert.equal(timeline.children.length, 4);
+assert.match(timeline.children[2].querySelector('.timestamp').textContent, /^原文/);
+assert.match(timeline.children[3].querySelector('.timestamp').textContent, /^翻訳（英語）/);
+run('replaceTimeline([trSource], "call-1")');
+assert.equal(timeline.children.filter(node => node.querySelector('.text').textContent === 'It is sunny').length, 1);
+
 (async () => {
   let respond;
   sandbox.fetch = () => new Promise(resolve => { respond = resolve; });

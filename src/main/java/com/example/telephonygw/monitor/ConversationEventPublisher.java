@@ -9,5 +9,9 @@ public interface ConversationEventPublisher {
             String text, java.time.Instant timestamp, long startMs, long endMs) {
     }
 
+    default void publishTranslationSnapshot(String sessionId, String kind, String language, String segmentId,
+            String sourceEventId, String text, java.time.Instant timestamp, long elapsedMs) {
+    }
+
     default java.util.List<ConversationEvent> recentTranscripts(String sessionId) { return java.util.List.of(); }
 }

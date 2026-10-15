@@ -15,8 +15,17 @@ public record ConversationEvent(
         String segmentId,
         String sourceEventId,
         long sourceStartMs,
-        long sourceEndMs
+        long sourceEndMs,
+        String transcriptKind,
+        String targetLanguage
 ) {
+    public ConversationEvent(long id, String sessionId, String speaker, String text, Instant timestamp,
+            String itemId, String responseId, boolean finalTranscript, String segmentId, String sourceEventId,
+            long sourceStartMs, long sourceEndMs) {
+        this(id, sessionId, speaker, text, timestamp, itemId, responseId, finalTranscript, segmentId, sourceEventId,
+                sourceStartMs, sourceEndMs, "", "");
+    }
+
     public ConversationEvent(long id, String sessionId, String speaker, String text, Instant timestamp,
             String itemId, String responseId, boolean finalTranscript) {
         this(id, sessionId, speaker, text, timestamp, itemId, responseId, finalTranscript, "", "", -1, -1);
@@ -34,6 +43,8 @@ public record ConversationEvent(
         responseId = responseId == null ? "" : responseId;
         segmentId = segmentId == null ? "" : segmentId;
         sourceEventId = sourceEventId == null ? "" : sourceEventId;
+        transcriptKind = transcriptKind == null ? "" : transcriptKind;
+        targetLanguage = targetLanguage == null ? "" : targetLanguage;
         if (!speaker.equals("caller") && !speaker.equals("assistant")) {
             throw new IllegalArgumentException("speaker must be caller or assistant: " + speaker);
         }

@@ -73,7 +73,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             return;
         }
         if (!outboundPlaying && depthBeforePoll < audioBridge.outboundStartBufferFrames(sessionId)
-                && !outboundComplete && !audioBridge.isLiveOutputQuiet(sessionId)) {
+                && !outboundComplete && !audioBridge.isContinuousOutputQuiet(sessionId)) {
             provideFrame(frame, new byte[frameBytes], true);
             return;
         }
@@ -83,7 +83,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             audioBridge.markOutboundPlayoutActive(sessionId);
             int clearedInboundFrames = audioBridge.clearInboundForAssistantSpeaking(sessionId);
             GatewayEventLogger.info(LOG, "openai_voice_playout_started", "sessionId", sessionId,
-                    "backend", audioBridge.isLiveSession(sessionId) ? "live" : "realtime", "bufferedFrames", depthBeforePoll);
+                    "backend", audioBridge.sessionBackend(sessionId), "bufferedFrames", depthBeforePoll);
             LOG.log(System.Logger.Level.INFO,
                     "Started outbound RTP audio playout: sessionId={0}, callId={1}, bufferedFrames={2}, outputComplete={3}, clearedInboundFrames={4}",
                     sessionId, callId, depthBeforePoll, outboundComplete, clearedInboundFrames);
@@ -94,7 +94,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         if (outbound == null) {
             outboundPlaying = false;
             GatewayEventLogger.info(LOG, "openai_voice_playout_queue_empty", "sessionId", sessionId,
-                    "backend", audioBridge.isLiveSession(sessionId) ? "live" : "realtime");
+                    "backend", audioBridge.sessionBackend(sessionId));
             audioBridge.markOutboundPlayoutInactive(sessionId);
             if (outboundComplete) {
                 audioBridge.clearOutboundComplete(sessionId);
@@ -102,10 +102,10 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             payload = new byte[frameBytes];
             provideFrame(frame, payload, true);
         } else {
-            if (audioBridge.isLiveSession(sessionId)) {
+            if (audioBridge.isContinuousSession(sessionId)) {
                 long queueMs = Math.max(0L, Duration.between(outbound.capturedAt(), Instant.now()).toMillis());
                 if (outboundFrames.get() % LOG_EVERY_FRAMES == 0) {
-                    GatewayEventLogger.info(LOG, "openai_live_playout",
+                    GatewayEventLogger.info(LOG, "openai_" + audioBridge.sessionBackend(sessionId) + "_playout",
                             "sessionId", sessionId, "queueMs", queueMs, "outboundDepth", depthBeforePoll,
                             "audioActive", pcmActive(outbound.payload()));
                 }
