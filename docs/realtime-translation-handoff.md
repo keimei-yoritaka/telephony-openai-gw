@@ -2,6 +2,8 @@
 
 作成日: 2026-10-15（日本時間）
 
+本書はOpenAI translation実装前の過去の記録である。現在の状態と別API追加の引き継ぎは[別の翻訳API追加への引き継ぎ](additional-translation-api-handoff.md)を参照する。
+
 ## この引き継ぎの位置付け
 
 ユーザーは本スレッドの目的であるGPT-Live対応を完了とし、次のRealtime translation追加を別スレッドで進めると指定した。本書は次の開発開始に必要な情報をまとめる。translationの仕様・実装は未着手であり、GPT-Live対応の完了を、実API・実通話・RHEL検証の完了とは区別する。

@@ -70,7 +70,7 @@ node src/test/js/monitor-check.cjs
 
 無音も含めて音声を継続送信します。SIPを切断すると最長15秒、APIの終了確認と残字幕の受信を別workerで行います。再接続中の音声は欠落し、過去の音声・会話は再送しません。同じ言語の入力を復唱する動作は保証されません。電話スピーカーからの回り込みは端末側も含めて検証してください。
 
-これは1通話の返送検証であり、別通話の相手への中継や双方向の電話通訳は含みません。実APIの権限・翻訳品質・実通話・RHEL実機は未検証です。[実装計画・検証記録](docs/realtime-translation-implementation-plan.md)と[公式translation仕様](https://developers.openai.com/api/docs/guides/realtime-translation)を参照してください。
+これは1通話の返送検証であり、別通話の相手への中継や双方向の電話通訳は含みません。ユーザーから日→英翻訳の正常動作報告を受けています。codec別・同時通話・長時間などの詳細な実機検証結果は未確認です。[実装計画・検証記録](docs/realtime-translation-implementation-plan.md)と[公式translation仕様](https://developers.openai.com/api/docs/guides/realtime-translation)を参照してください。
 
 ## ローカル確認
 
@@ -234,7 +234,8 @@ RHEL EC2で外部ブラウザから確認する場合は、`monitor.bindAddress:
 
 - [システム設計書](docs/system-design.md)
 - [Realtime / GPT-Liveのvoice設定・一覧](docs/voice-settings.md)
-- [Realtime translation開発への引き継ぎ](docs/realtime-translation-handoff.md)
+- [別の翻訳API追加への引き継ぎ（最新）](docs/additional-translation-api-handoff.md)
+- [Realtime translation開発開始時の引き継ぎ（過去の記録）](docs/realtime-translation-handoff.md)
 - [要件・実装計画](docs/requirements-and-implementation-plan.md)
 - [デプロイメントガイド](docs/deployment-guide.md)
 - [RHELデモ環境への差分反映手順](docs/rhel-update-patch-guide.md)
