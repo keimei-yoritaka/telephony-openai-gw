@@ -152,6 +152,8 @@ public final class VoiceIntegrationCheck {
             check(!delayed.greeted, "closed call gets no greeting");
         }
         TranslationIntegrationCheck.run();
+        com.example.telephonygw.soniox.SonioxIntegrationCheck.run();
+        SonioxManagerCheck.run();
         System.out.println("Voice integration checks passed: " + checks);
     }
 

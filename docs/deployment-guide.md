@@ -7,7 +7,7 @@
 - 開発・検証環境: macOS
 - 顧客向けデモ環境: RHEL 8.10
 
-SIP/RTP、PJSUA2 Java binding、OpenAI Realtime API / GPT-Liveの基本構成は両環境で同一とし、OS差分はnative library build、service管理、firewall設定に閉じ込める。
+SIP/RTP、PJSUA2 Java binding、OpenAI Realtime API / GPT-Live / OpenAI translation / Soniox translationの基本構成は両環境で同一とし、OS差分はnative library build、service管理、firewall設定に閉じ込める。
 
 ## 共通モジュール構成
 
@@ -25,7 +25,7 @@ Repositoryに含めないモジュール:
 
 - PJSIP/PJSUA2 native build成果物: `.deps/`
 - 実環境設定: `config/gateway.local.yaml`、`/etc/telephony-openai-gw/gateway.yaml`
-- secret: `OPENAI_API_KEY`、SIP password、private certificate
+- secret: `OPENAI_API_KEY`、`SONIOX_API_KEY`、SIP password、private certificate
 - log: `apl.log`、systemd journal export、temporary file
 
 PJSIP/PJSUA2 native成果物は、各OS上で以下へ生成する。
@@ -422,3 +422,11 @@ scripts/check-voice.sh
 通常起動は従来と同じ`run-pjsua2-local.sh`を使う。`run-pjsua2-startup-check.sh`は実通話待ち受け用ではない。Liveは通話終了時に非同期で終了確認を行い、`session.closed`未受信時には最終usage未確認をログに残す。
 
 この更新のRHEL実機・実通話は未検証。設定check、native込みコンパイル、接続確認、単独通話、同時通話の順で検証する。
+
+## Soniox translationの追加条件
+
+Sonioxはスロットの`voice.backend: soniox_translation`で有効化する。Java 21／既存Gsonを使い、追加SDK・native libraryは不要。STT＋内蔵translationとTTSに2本のWebSocketで接続するため、`stt-rt.soniox.com:443`と`tts-rt.soniox.com:443`への到達性が必要。Soniox projectのSTT＋TTS権限、残高、同時実行枠、リージョンと保存条件を確認する。初期版は公開接続先を固定使用する。
+
+実行ユーザーに`SONIOX_API_KEY`を渡し、実値をcommitしない。既存設定はそのまま使える。SonioxスロットにはOpenAI keyが不要で、既存OpenAIスロットにSoniox keyは不要。混在例は[config/gateway.soniox.example.yaml](../config/gateway.soniox.example.yaml)、適用・検証は[RHEL差分手順](rhel-update-patch-guide.md)を参照する。
+
+実API／実通話は利用環境で確認する。STT接続中は無音も費用評価に含め、翻訳textとTTS生成分を合算する。mainへのmerge・Stableタグ変更・releaseはこの追加に含めない。

@@ -55,15 +55,15 @@ public final class GatewayApp {
                 "sessionSlots", config.sessions().size());
         for (GatewayConfig.SessionSlotConfig sessionSlot : config.sessions()) {
             LOG.log(System.Logger.Level.INFO,
-                    "Configured session slot {0} ({1}): sipEndpoint={2}:{3}/{4}, openaiModel={5}, voice={6}, backend={7}",
+                    "Configured session slot {0} ({1}): sipEndpoint={2}:{3}/{4}, voiceModel={5}, voice={6}, backend={7}",
                     sessionSlot.slotId(),
                     sessionSlot.name(),
                     sessionSlot.sip().bindAddress(),
                     sessionSlot.sip().port(),
                     sessionSlot.sip().transport(),
-                    sessionSlot.openAi().selectedModel(),
-                    sessionSlot.openAi().selectedVoice(),
-                    sessionSlot.openAi().backend());
+                    sessionSlot.selectedModel(),
+                    sessionSlot.selectedVoice(),
+                    sessionSlot.backend());
         }
 
         conversationMonitorServer.start();

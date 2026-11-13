@@ -12,6 +12,46 @@
 - `telephony-openai-gw.service`がsystemdに登録済み
 - `config/gateway.local.yaml`がRHEL環境用に作成済み
 
+## Soniox translation Experimentalを適用する場合
+
+Soniox追加版は`codex/experimental`の実装で、日→英の同一電話への音声返送＋原文／英訳字幕を扱う。既存3方式は維持する。ローカル実装だけでpushされていない場合、RHELで取得できるのは従来版なので、反映対象commitとGitHubへの反映を確認してから更新する。mainへのmerge、Stableタグ変更、新規releaseは不要。
+
+停止・退避・Git更新は下記の既存translation手順と同じ。実際のsystemd `ExecStart`と設定先を確認し、SIP情報・`.deps`・機密設定を保全する。native処理追加はないため、正常な既存PJSUA2成果物の再buildは通常不要。
+
+Git管理外の実行設定で対象スロットへ次を反映する。既存スロットの切替では古い`openai.backend`を削除し、新キーとの競合をなくす。OpenAI translationを残すスロットには変更不要。新スロットを増やす場合はSIP account、SIP port、RTP範囲を別に割り当て、`gateway.sessionIds`へ追加する。
+
+```yaml
+session.session-4:
+  name: Soniox日英翻訳
+  voice.backend: soniox_translation
+  soniox.apiKey: ${SONIOX_API_KEY}
+  soniox.sttModel: stt-rt-v6
+  soniox.languageHints: ja
+  soniox.translationTargetLanguage: en
+  soniox.maxEndpointDelayMs: 1000
+  soniox.ttsModel: tts-rt-v2
+  soniox.ttsVoice: Adrian
+  soniox.ttsSpeed: 1.0
+  soniox.transcriptLoggingEnabled: false
+```
+
+SIP等を含む完全な例は[Soniox混在設定例](../config/gateway.soniox.example.yaml)。systemdから環境変数を渡す場合は実行環境に`SONIOX_API_KEY`を設定し、値をRepository・ログ・共有文書へ含めない。SonioxのSTTとTTS両方の権限・残高・同時枠、利用リージョンと保存条件を確認する。`stt-rt.soniox.com:443`と`tts-rt.soniox.com:443`へのHTTPS／WSSが必要。実際のリージョンに別接続先が必要な場合は、公開接続先を使う今回の実装をそのまま適用せず調整する。
+
+更新後は次を確認し、通常起動で待ち受ける。設定例を実環境設定へ丸ごと上書きしない。
+
+```sh
+scripts/check-config.sh /etc/telephony-openai-gw/gateway.yaml
+scripts/check-voice.sh
+node src/test/js/monitor-check.cjs
+scripts/check-pjsua2-java.sh
+sudo systemctl start telephony-openai-gw
+sudo journalctl -u telephony-openai-gw -f
+```
+
+モニターを有効にして日→英の両字幕・電話音声、PCMU／G.722、長い無音、終了時の後着音声破棄、既存3方式との同時通話を確認する。`soniox_session_started`、`soniox_first_translation`、`soniox_first_audio`、`soniox_translation_playout`、`soniox_error`、`soniox_session_closed`を追う。生成字幕は電話へ再生済みの証明ではない。
+
+認証／権限／設定／残高エラーでは同一通話中の自動再試行を止める。修正・必要な再起動後にかけ直す。通信失敗は15～60秒＋jitterで再接続し、失われた音声・訳文は再送しない。Sonioxは無音を含むSTT接続時間と翻訳text・TTSを合算して費用評価する。実環境の受入記録は[計画の受入条件](soniox-translation-implementation-plan.md)に沿って残す。
+
 ## Realtime translation ExperimentalをGitで適用する場合
 
 今回のtranslation更新は`codex/experimental`を対象とする。以下を今回の適用手順として使い、後半の古いmulti-session更新に記載したbranch名・commit・単独javacコマンドは使用しない。

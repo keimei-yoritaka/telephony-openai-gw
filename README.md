@@ -1,8 +1,8 @@
 # Telephony OpenAI Gateway
 
-SIP/RTPによる電話音声とOpenAIの音声Botを接続する軽量Gatewayを構築するプロジェクトです。
+SIP/RTPによる電話音声と音声AI・翻訳APIを接続する軽量Gatewayを構築するプロジェクトです。
 
-JavaアプリケーションからPJSUA2 Java bindingを利用し、SIP Registration、UDP/IPv4のSIP/RTP、G.722/PCMU音声、OpenAI Realtime API / GPT-Live連携を実装します。
+JavaアプリケーションからPJSUA2 Java bindingを利用し、SIP Registration、UDP/IPv4のSIP/RTP、G.722/PCMU音声、OpenAI Realtime API / GPT-Live / OpenAI translation / Soniox translation連携を実装します。
 
 ## 現在の状態
 
@@ -11,7 +11,7 @@ Stableバージョンは`v0.1.0`です。[リリースノート](docs/releases/v
 - GitHub Repositoryは`telephony-openai-gw`として管理しています。
 - SIP backendは`placeholder`と`pjsua2`を設定で切り替えられます。
 - PJSUA2 backendでは、複数の固定セッションスロットごとにUDP transport、SIP Account、Registrationを作成します。
-- 各セッションスロットは最大1コールを受け付け、選択したRealtime / Live / translation sessionと1:1で紐付きます。
+- 各セッションスロットは最大1コールを受け付け、選択したRealtime / Live / OpenAI translation / Soniox translation sessionと1:1で紐付きます。
 - OpenAI voice、system instructions、initial greetingはセッションスロットごとに設定できます。
 - inbound/outbound audio queueは通話セッションごとに分離し、capacityは`media`設定で共通値として指定できます。
 - OpenAIへのinbound音声転送workerは通話セッションごとに起動します。
@@ -71,6 +71,39 @@ node src/test/js/monitor-check.cjs
 無音も含めて音声を継続送信します。SIPを切断すると最長15秒、APIの終了確認と残字幕の受信を別workerで行います。再接続中の音声は欠落し、過去の音声・会話は再送しません。同じ言語の入力を復唱する動作は保証されません。電話スピーカーからの回り込みは端末側も含めて検証してください。
 
 これは1通話の返送検証であり、別通話の相手への中継や双方向の電話通訳は含みません。ユーザーから日→英翻訳の正常動作報告を受けています。codec別・同時通話・長時間などの詳細な実機検証結果は未確認です。[実装計画・検証記録](docs/realtime-translation-implementation-plan.md)と[公式translation仕様](https://developers.openai.com/api/docs/guides/realtime-translation)を参照してください。
+
+## ExperimentalのSoniox translation
+
+`voice.backend: soniox_translation`でSonioxを追加のAgentとして選べます。日→英を同じ電話へ音声で返し、原文／翻訳字幕をモニターに表示します。Soniox STTの内蔵翻訳とSoniox TTSを組み合わせ、既存Realtime／Live／OpenAI translationは引き続き利用できます。
+
+```yaml
+session.session-4:
+  name: Soniox日英翻訳
+  voice.backend: soniox_translation
+  soniox.apiKey: ${SONIOX_API_KEY}
+  soniox.sttModel: stt-rt-v6
+  soniox.languageHints: ja
+  soniox.translationTargetLanguage: en
+  soniox.maxEndpointDelayMs: 1000
+  soniox.ttsModel: tts-rt-v2
+  soniox.ttsVoice: Adrian
+  soniox.ttsSpeed: 1.0
+  soniox.transcriptLoggingEnabled: false
+```
+
+上記は抜粋です。SIP設定を含む4方式共存例は[config/gateway.soniox.example.yaml](config/gateway.soniox.example.yaml)です。SonioxスロットにOpenAI key・bot設定は不要です。`voice.backend`未指定では従来の`openai.backend`を使い、両方未指定なら`realtime`です。両キーの値が異なる場合は設定エラーになるため、既存スロットを切り替えるときは古い`openai.backend`を削除してください。
+
+確定した英訳だけを短い単位でTTSへ送り、未確定字幕は改訂表示します。TTSの音声生成中も電話入力は継続します。挨拶・業務tool・delegation・別通話への中継・two-wayは含みません。短い音声単位の自然さ、実遅延、受話音の回り込みは実機で評価してください。
+
+接続障害時は15～60秒＋jitterで再接続し、過去音声・未再生訳は再送しません。認証・設定・残高等のエラーでは自動再試行を止めます。Sonioxの`soniox_error`とモニター状態を確認し、設定・権限・残高を修正後にかけ直してください。終了時は残字幕を最大15秒受信し、TTSのcancel確認を最大5秒待ちます。電話切断後の音声は再生しません。
+
+STTの無音を含む接続時間、原文／翻訳text、TTSの利用量で費用が発生します。[公式構成](https://docs.soniox.com/translation/sts-translation)と[料金](https://soniox.com/pricing)を参照してください。実API・実通話・RHELでの品質／費用は未検証です。[実装計画・検証記録](docs/soniox-translation-implementation-plan.md)、[RHEL反映手順](docs/rhel-update-patch-guide.md)に詳細を記載しています。
+
+```sh
+scripts/check-config.sh config/gateway.soniox.example.yaml
+scripts/check-voice.sh
+node src/test/js/monitor-check.cjs
+```
 
 ## ローカル確認
 

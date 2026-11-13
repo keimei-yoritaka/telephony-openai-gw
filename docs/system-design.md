@@ -2,7 +2,7 @@
 
 ## 目的
 
-本書は、`telephony-openai-gw`の現行実装を後から追跡・変更できるように整理した設計ドキュメントである。SIP/RTP、OpenAI Realtime API / GPT-Live / Realtime translation、会話モニターUI、マルチセッション制御、デプロイ構成を対象とする。
+本書は、`telephony-openai-gw`の現行実装を後から追跡・変更できるように整理した設計ドキュメントである。SIP/RTP、OpenAI Realtime API / GPT-Live / Realtime translation / Soniox translation、会話モニターUI、マルチセッション制御、デプロイ構成を対象とする。
 
 仕様変更時は、実装・設定例・運用手順に加えて、本書とdraw.io図も同じ変更単位で更新する。
 
@@ -21,10 +21,11 @@ draw.ioで編集できる図は以下に格納する。
 - `OpenAI Realtime Sequence`: OpenAI Realtime APIとのWebSocketイベントシーケンス
 - `OpenAI Live Sequence`: GPT-Liveの開始、音声、transcript、終了シーケンス
 - `OpenAI Translation Sequence`: 専用translationの設定、継続入力、字幕、終了シーケンス
+- `Soniox Translation Sequence`: STT翻訳、確定訳TTS、字幕、終了・再接続シーケンス
 
 ## スコープ
 
-本Gatewayは、SIP/RTP電話音声とOpenAI Realtime API / GPT-Live / Realtime translationを接続する軽量なJavaアプリケーションである。PBX機能は持たず、設定された複数の固定セッションスロットごとにSIP UASとしてINVITEを受け、通話ごとに設定されたbackendのOpenAI voice sessionを作成する。
+本Gatewayは、SIP/RTP電話音声とOpenAI Realtime API / GPT-Live / Realtime translation / Soniox translationを接続する軽量なJavaアプリケーションである。PBX機能は持たず、設定された複数の固定セッションスロットごとにSIP UASとしてINVITEを受け、通話ごとに設定されたbackendのvoice sessionを作成する。
 
 ### 対象
 
@@ -32,7 +33,7 @@ draw.ioで編集できる図は以下に格納する。
 - UDP/IPv4によるSIP/RTP待ち受け
 - PJSUA2 Java bindingによるSIP/RTP制御
 - PCMU/G.722のSIP SDP offer/answerとPCM音声ブリッジ
-- OpenAI Realtime API / GPT-Live / Realtime translationへの音声転送と音声応答受信
+- OpenAI Realtime API / GPT-Live / Realtime translation / Soniox translationへの音声転送と音声応答受信
 - 通話セッションごとの音声キュー分離
 - 会話transcriptログとブラウザモニターUI
 - RHEL 8.10およびmacOSでの稼働
@@ -53,9 +54,10 @@ flowchart LR
   Registrar["SIP Registrar"] <-->|"REGISTER / rport"| PJSIP
   PJSIP --> Session["CallSessionManager"]
   PJSIP <-->|"PCM frames"| Audio["AudioBridge"]
-  Audio -->|"Inbound PCM"| Realtime["VoiceSessionManager / RealtimeSession / LiveSession / TranslationSession"]
+  Audio -->|"Inbound PCM"| Realtime["VoiceSessionManager / RealtimeSession / LiveSession / TranslationSession / SonioxTranslationSession"]
   Realtime -->|"Outbound PCM"| Audio
   Realtime <-->|"WebSocket audio/events"| OpenAI["OpenAI Realtime API / GPT-Live / Realtime translation"]
+  Realtime <-->|"STT translation / TTS WebSocket"| Soniox["Soniox STT + TTS"]
   Realtime --> MonitorHub["ConversationEventHub"]
   MonitorHub --> Monitor["ConversationMonitorServer"]
   Browser["Browser"] <-->|"HTTP / SSE"| Monitor
@@ -75,9 +77,10 @@ flowchart LR
 | `CallSessionManager` | 通話セッション生成・終了・最近のセッション履歴保持 |
 | `AudioBridge` | セッション別inbound/outbound audio queueとsample rate保持 |
 | `VoiceSessionManager` | スロット別backendの選択、voice sessionの生成、音声転送worker・再試行管理 |
-| `VoiceSession` | Realtime / Live / translation共通のsession lifecycle interface |
+| `VoiceSession` | Realtime / Live / OpenAI translation / Soniox translation共通のsession lifecycle interface |
 | `RealtimeSession` | OpenAI Realtime WebSocket、音声送受信、transcript、barge-in制御 |
 | `TranslationSession` | 専用翻訳WebSocket、入力clock・無音補完、字幕、終了確認 |
+| `SonioxTranslationSession` / `SonioxTtsClient` / `SonioxTranscriptAssembler` | Soniox STT翻訳、確定訳のTTS、確定／未確定字幕の分離 |
 | `TranslationTranscriptAssembler` | 原文・翻訳の独立snapshotとevent ID重複対策 |
 | `LiveSession` | GPT-Live primary WebSocket、音声対話、挨拶、transcript、usage、終了確認 |
 | `StreamingAudioDecoder` / `LiveTranscriptAssembler` | PCM delta境界の保持、話者別の表示segment集約 |
@@ -86,7 +89,7 @@ flowchart LR
 
 ## セッションモデル
 
-本アプリケーションは、設定ファイル上の`gateway.sessionIds`で固定セッションスロットを定義する。各スロットは独立したSIP transport、SIP account、Registration、OpenAI設定を持つ。
+本アプリケーションは、設定ファイル上の`gateway.sessionIds`で固定セッションスロットを定義する。各スロットは独立したSIP transport、SIP account、Registration、voice backend設定を持つ。
 
 voiceはRealtimeで`openai.voice`、Liveで`openai.liveVoice`を使用する。backend別の対応一覧、公式資料で確認できる特徴、設定検証と変更反映の方法は[Realtime / GPT-Liveのvoice設定](voice-settings.md)を参照する。本項は既存仕様の説明追加であり、設定形式や実装の変更はない。
 
@@ -112,7 +115,7 @@ session.session-2:
 - 1スロットにつき同時通話は最大1件。
 - 同一スロットで通話中にINVITEを受けた場合は`486 Busy Here`を返す。
 - スロット間は独立しており、複数スロットの同時通話は可能。
-- SIP側セッションと選択したOpenAI voice sessionは1:1で対応する。
+- SIP側セッションと選択したvoice sessionは1:1で対応する。
 
 ## SIP/RTP設計
 
@@ -298,6 +301,56 @@ monitor eventには互換性を保って`transcriptKind`（`source` / `translati
 SIP切断時は共通queueを停止し、別workerで入力clockを停止する。内部に受理済みの入力と200ms未満の端数を一度だけ送信し、`session.close`を送る。最大15秒、残字幕と`session.closed`を受信する。SIP切断後に届く音声は再生しない。正常確認とtimeout / transport切断は区別して記録し、その後socketを解放する。
 
 公式仕様: [Translation guide](https://developers.openai.com/api/docs/guides/realtime-translation)、[Client events](https://developers.openai.com/api/reference/resources/realtime/translation-client-events)、[Server events](https://developers.openai.com/api/reference/resources/realtime/translation-server-events)。検証範囲は[実装計画・記録](realtime-translation-implementation-plan.md)を参照する。
+
+## Soniox translation backend設計
+
+`session.<slotId>.voice.backend: soniox_translation`で、日→英の同一通話への音声返送と原文／翻訳字幕を選択する。`voice.backend`を省略すると従来の`openai.backend`、それも省略すると`realtime`となる。両キーを明示して値が異なる場合は設定エラー。新キーは既存3値も選択可能だが、従来キーにSoniox値は追加しない。OpenAI専用translationのprotocol・音声clock・設定・日→英処理は変更しない。
+
+### 設定と責務
+
+各スロットの`soniox.*`で認証・STT・TTSを独立指定する。SonioxスロットにOpenAI keyやbot設定は不要。完全な混在例は[Soniox設定例](../config/gateway.soniox.example.yaml)、調査と検証記録は[実装計画](soniox-translation-implementation-plan.md)を参照する。
+
+| キー | 既定値・検証 |
+| --- | --- |
+| `soniox.apiKey` | 必須。`${SONIOX_API_KEY}`などから渡す |
+| `soniox.sttModel` | `stt-rt-v6` |
+| `soniox.languageHints` | `ja`。初期版ではこの1言語のみ。入力排除の保証ではない |
+| `soniox.translationTargetLanguage` | `en`。初期版では英語のみ |
+| `soniox.maxEndpointDelayMs` | `1000`。500～3000ms |
+| `soniox.ttsModel` | `tts-rt-v2` |
+| `soniox.ttsVoice` | `Adrian`。Soniox voice名を指定 |
+| `soniox.ttsSpeed` | `1.0`。有限値0.7～1.3 |
+| `soniox.transcriptLoggingEnabled` | `false`。モニター字幕とは独立 |
+
+`SonioxTranslationSession : VoiceSession`がSTTと通話lifecycle、`SonioxTranscriptAssembler`が字幕、`SonioxTtsClient`が確定訳から音声生成、`SonioxSocket`が接続・断片JSON・直列送信を担当する。SonioxはSTT内蔵翻訳とTTSを2本のWebSocketで組み合わせる。独立したテキスト翻訳LLM、delegation、業務toolを使わない。[公式構成](https://docs.soniox.com/translation/sts-translation)
+
+### 入力と字幕
+
+STT接続先は`wss://stt-rt.soniox.com/transcribe-websocket`。接続時Bearer認証、開始JSON後に20ms binary PCM16LE / mono / 16kHzを送る。PCMU由来8kHzはresampleし、G.722由来16kHzはそのまま送る。`translation: {type: one_way, target_language: en}`、言語識別とendpoint検出を有効にする。OpenAIのcreated／readyイベントは待たず、開始送信後に入力を許可する。認証エラーはopen後にも到着するため継続監視する。
+
+PJSUA2の無音PCM frameも送り、空payloadのnative callbackは音声を捏造せず読み飛ばす。入力が途切れると5秒ごとにSTT keepaliveを送る。OpenAI translationの200ms／無音生成clockは使用しない。各socketは送信待ち100件、送信timeout5秒、接続timeout10秒、受信JSON8Mi文字まで。順序を保ち、overflowでは停止する。
+
+確定tokenは追加し、未確定tokenはresponseごとに置換する。原文／翻訳を独立表示し、4秒または確定本文512文字を目安に表示segmentを更新する。未確定tailの消失を空snapshotでも配信し、HubとUIは削除情報を保持して古い履歴からの復活を防ぐ。字幕segmentは最大32768文字。表示IDは接続世代付き`soniox-*`で、API event ID・原文と訳文の架空の1対1時刻対応を作らない。訳文の原音声時刻は`-1`、表示はAPI確定turnを意味しない。`<end>`／`<fin>`は画面・TTSへ渡さない。[STT仕様](https://docs.soniox.com/api-reference/stt/websocket-api)
+
+### 確定英訳とTTS再生
+
+`is_final: true`かつ翻訳tokenの`language: en`だけをTTSへ送る。句読点、確定制御token、未送信確定訳の先頭から500ms、512文字のいずれかで短い単位を作る。空白・繰り返しを保持し、未確定字幕の訂正を読み上げない。これはアプリ側の音声生成単位で、文全体の韻律や遅延は実機評価が必要。
+
+TTS接続先は`wss://tts-rt.soniox.com/tts-websocket`。1通話1接続・同時1streamを使い、設定JSON→`text / text_end: true`を送る。`audio_end`で音声をflushし、`terminated`を待って次のstreamを開始する。応答audioはraw PCM16LE / mono / 24kHzを明示し、`StreamingAudioDecoder`で20ms化して通話sample rateへ変換する。stream境界で残PCMをflush／clearし、奇数byteを次streamへ混ぜない。
+
+再生開始bufferは2 frame。TTS待ちは最大10単位・4096文字、未送信単位は最大512文字、各streamの完了待ちは60秒。20秒無送信でTTS接続keepaliveを送る。Sonioxのoutbound queueは共通設定容量と500 frame（10秒）の小さい方で制限し、frame拒否を障害として扱う。他backendのdecoder／queue拒否時の方針は変えない。生成完了とRTP実再生完了は別に扱う。
+
+送話中も入力を継続し、Realtime用barge-in・入力破棄・初期挨拶は適用しない。別通話中継、two-way、voice cloning、Soniox agent text／echo cancellationは実装しない。[TTS仕様](https://docs.soniox.com/api-reference/tts/websocket-api)
+
+### 終了と復旧
+
+SIP切断時に入力・再生を止め、受理済み送信の後にSTTへ空textを送り、最大15秒で残字幕と`finished`を待つ。終了中の字幕から新しいTTSを起動しない。実行中TTSはcancelし、最大5秒で`terminated`を確認する。後着接続・callbackは終了済みqueue・sessionを復活させない。
+
+400／401／402／403は設定・認証・権限・予算の確認が必要な停止状態とし、同一通話中の自動再試行を止める。429、通信断、timeout、5xx等は15→30→60秒＋0～1000ms jitterで再接続する。上限300分・予期せぬ`finished`も新世代に接続する。無音時にも健全性を確認し、Realtimeのidle closeを適用しない。過去音声・翻訳テキスト・生成音声は再送せず、欠落・未再生の可能性を状態表示する。
+
+`soniox_session_started`、`soniox_first_input`、`soniox_first_translation`、`soniox_first_audio`、`soniox_translation_playout`、`soniox_error`、`soniox_retry_scheduled`、`soniox_session_closed`で追跡する。エラー本文・payload・keyは出さず、API codeと制限したrequest IDを記録する。字幕ログは既定無効。
+
+Java 21／既存Gsonで実装しnative追加は不要。RHELからSTT・TTS両方へWSS 443到達が必要。Soniox側の権限・残高・同時枠・リージョン／保存条件は利用projectで確認する。無音を含むSTT stream時間と翻訳text、TTSの使用量を合算して費用評価する。実API・RHEL実通話はオフライン検証と区別する。
 
 ## Barge-in制御（Realtime backend）
 

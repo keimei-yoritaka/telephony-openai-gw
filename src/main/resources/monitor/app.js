@@ -47,13 +47,19 @@ function eventKey(event) {
 }
 
 function appendEventToTimeline(event) {
-  if (!event || !event.text) return;
+  if (!event || event.text == null) return;
   const key = eventKey(event);
   const previous = visibleEvents.get(key);
   if (previous && previous.id >= event.id) return;
   visibleEvents.set(key, event);
-  clearEmptyState();
   let node = renderedSegments.get(key);
+  if (!event.text) {
+    if (node) node.remove();
+    renderedSegments.delete(key);
+    renderEmptyState();
+    return;
+  }
+  clearEmptyState();
   if (!node) {
     node = template.content.firstElementChild.cloneNode(true);
     node.classList.add(event.speaker === "assistant" ? "assistant" : "caller");
@@ -85,7 +91,7 @@ function replaceTimeline(events, sessionId) {
 }
 
 function renderEvent(event) {
-  if (!event || !event.sessionId || !event.text) {
+  if (!event || !event.sessionId || event.text == null) {
     return;
   }
   rememberSession({

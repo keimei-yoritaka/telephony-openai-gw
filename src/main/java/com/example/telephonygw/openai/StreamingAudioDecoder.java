@@ -5,18 +5,24 @@ import java.util.Arrays;
 import java.util.Base64;
 
 /** Preserve PCM samples and resampling phase across arbitrary audio delta boundaries. */
-final class StreamingAudioDecoder {
+public final class StreamingAudioDecoder {
     private static final int INPUT_FRAME_BYTES = 24000 * 20 / 1000 * 2;
     private final AudioBridge bridge;
     private final String sessionId;
+    private final boolean failOnOverflow;
     private byte[] pending = new byte[0];
 
-    StreamingAudioDecoder(AudioBridge bridge, String sessionId) {
-        this.bridge = bridge;
-        this.sessionId = sessionId;
+    public StreamingAudioDecoder(AudioBridge bridge, String sessionId) {
+        this(bridge, sessionId, false);
     }
 
-    synchronized void append(String base64) {
+    public StreamingAudioDecoder(AudioBridge bridge, String sessionId, boolean failOnOverflow) {
+        this.bridge = bridge;
+        this.sessionId = sessionId;
+        this.failOnOverflow = failOnOverflow;
+    }
+
+    public synchronized void append(String base64) {
         byte[] delta = Base64.getDecoder().decode(base64);
         if (delta.length > 4 * 1024 * 1024) throw new IllegalArgumentException("Audio delta too large");
         byte[] bytes = Arrays.copyOf(pending, pending.length + delta.length);
@@ -30,17 +36,18 @@ final class StreamingAudioDecoder {
     }
 
     // Flush a partial frame after a short output gap; this is not a conversation-turn boundary.
-    synchronized void flush() {
+    public synchronized void flush() {
         int complete = pending.length - pending.length % 2;
         if (complete > 0) enqueue(Arrays.copyOf(pending, INPUT_FRAME_BYTES));
         pending = complete < pending.length ? new byte[] { pending[pending.length - 1] } : new byte[0];
     }
 
-    synchronized void clear() { pending = new byte[0]; }
+    public synchronized void clear() { pending = new byte[0]; }
 
     private void enqueue(byte[] pcm24) {
         int rate = bridge.sessionSampleRate(sessionId, 8000);
         byte[] pcm = Pcm16Resampler.downsample(pcm24, 24000, rate);
-        bridge.enqueueOutboundPcm16(sessionId, pcm, rate, 20);
+        if (!bridge.enqueueOutboundPcm16(sessionId, pcm, rate, 20) && failOnOverflow)
+            throw new IllegalStateException("Audio output queue rejected a frame");
     }
 }

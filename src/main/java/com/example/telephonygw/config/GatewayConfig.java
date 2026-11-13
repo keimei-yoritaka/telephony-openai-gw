@@ -22,15 +22,30 @@ public record GatewayConfig(
             SipConfig sip,
             RegistrationConfig registration,
             OpenAiConfig openAi,
-            BotConfig bot
+            BotConfig bot,
+            String backend,
+            SonioxConfig soniox
     ) {
+        public SessionSlotConfig(String slotId, String name, SipConfig sip, RegistrationConfig registration,
+                OpenAiConfig openAi, BotConfig bot) {
+            this(slotId, name, sip, registration, openAi, bot, openAi.backend(), null);
+        }
+
+        public boolean isSoniox() { return "soniox_translation".equals(backend); }
+        public String selectedModel() { return isSoniox() ? soniox.sttModel() : openAi.selectedModel(); }
+        public String selectedVoice() { return isSoniox() ? soniox.ttsVoice() : openAi.selectedVoice(); }
         public void validate() {
             require("session.slotId", slotId);
             require("session." + slotId + ".name", name);
             sip.validate("session." + slotId + ".sip");
             registration.validate("session." + slotId + ".registration");
-            openAi.validate("session." + slotId + ".openai");
-            if (!openAi.isTranslation()) bot.validate("session." + slotId + ".bot");
+            if (!Set.of("realtime", "live", "translation", "soniox_translation").contains(backend))
+                throw new IllegalArgumentException("Unsupported voice.backend");
+            if (isSoniox()) soniox.validate("session." + slotId + ".soniox");
+            else {
+                openAi.validate("session." + slotId + ".openai");
+                if (!openAi.isTranslation()) bot.validate("session." + slotId + ".bot");
+            }
         }
     }
 
@@ -190,6 +205,23 @@ public record GatewayConfig(
             requireRange(prefix + ".turnDetectionServerVadSilenceDurationMs",
                     turnDetectionServerVadSilenceDurationMs, 0, 10000);
             require(prefix + ".inputTranscriptionModel", inputTranscriptionModel);
+        }
+    }
+
+    public record SonioxConfig(String apiKey, String sttModel, List<String> languageHints,
+            String translationTargetLanguage, int maxEndpointDelayMs, String ttsModel,
+            String ttsVoice, double ttsSpeed, boolean transcriptLoggingEnabled) {
+        public void validate(String prefix) {
+            require(prefix + ".apiKey", apiKey);
+            require(prefix + ".sttModel", sttModel);
+            require(prefix + ".ttsModel", ttsModel);
+            require(prefix + ".ttsVoice", ttsVoice);
+            requireEquals(prefix + ".translationTargetLanguage", translationTargetLanguage, "en");
+            if (!languageHints.equals(List.of("ja")))
+                throw new IllegalArgumentException(prefix + ".languageHints must be ja for the initial Japanese to English backend");
+            requireRange(prefix + ".maxEndpointDelayMs", maxEndpointDelayMs, 500, 3000);
+            if (!Double.isFinite(ttsSpeed) || ttsSpeed < 0.7 || ttsSpeed > 1.3)
+                throw new IllegalArgumentException(prefix + ".ttsSpeed must be between 0.7 and 1.3");
         }
     }
 

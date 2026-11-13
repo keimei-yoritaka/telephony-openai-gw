@@ -119,6 +119,7 @@ public final class AudioBridge {
     }
 
     private boolean enqueueOutboundActive(String sessionId, byte[] payload, int sampleRateHz, int durationMs) {
+        if ("soniox_translation".equals(sessionBackend(sessionId)) && outboundDepth(sessionId) >= 500) return false;
         AudioFrame frame = new AudioFrame(
                 sessionId,
                 AudioFrame.Direction.OUTBOUND,

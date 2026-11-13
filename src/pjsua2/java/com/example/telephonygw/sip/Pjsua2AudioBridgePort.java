@@ -64,6 +64,12 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         }
     }
 
+    private String playoutEvent(String suffix) {
+        if ("soniox_translation".equals(audioBridge.sessionBackend(sessionId)))
+            return suffix.startsWith("soniox_") ? suffix : "soniox_" + suffix;
+        return "openai_" + suffix;
+    }
+
     @Override
     public void onFrameRequested(MediaFrame frame) {
         int depthBeforePoll = audioBridge.outboundDepth(sessionId);
@@ -82,7 +88,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             outboundPlaying = true;
             audioBridge.markOutboundPlayoutActive(sessionId);
             int clearedInboundFrames = audioBridge.clearInboundForAssistantSpeaking(sessionId);
-            GatewayEventLogger.info(LOG, "openai_voice_playout_started", "sessionId", sessionId,
+            GatewayEventLogger.info(LOG, playoutEvent("voice_playout_started"), "sessionId", sessionId,
                     "backend", audioBridge.sessionBackend(sessionId), "bufferedFrames", depthBeforePoll);
             LOG.log(System.Logger.Level.INFO,
                     "Started outbound RTP audio playout: sessionId={0}, callId={1}, bufferedFrames={2}, outputComplete={3}, clearedInboundFrames={4}",
@@ -93,7 +99,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
         byte[] payload;
         if (outbound == null) {
             outboundPlaying = false;
-            GatewayEventLogger.info(LOG, "openai_voice_playout_queue_empty", "sessionId", sessionId,
+            GatewayEventLogger.info(LOG, playoutEvent("voice_playout_queue_empty"), "sessionId", sessionId,
                     "backend", audioBridge.sessionBackend(sessionId));
             audioBridge.markOutboundPlayoutInactive(sessionId);
             if (outboundComplete) {
@@ -105,7 +111,7 @@ final class Pjsua2AudioBridgePort extends AudioMediaPort {
             if (audioBridge.isContinuousSession(sessionId)) {
                 long queueMs = Math.max(0L, Duration.between(outbound.capturedAt(), Instant.now()).toMillis());
                 if (outboundFrames.get() % LOG_EVERY_FRAMES == 0) {
-                    GatewayEventLogger.info(LOG, "openai_" + audioBridge.sessionBackend(sessionId) + "_playout",
+                    GatewayEventLogger.info(LOG, playoutEvent(audioBridge.sessionBackend(sessionId) + "_playout"),
                             "sessionId", sessionId, "queueMs", queueMs, "outboundDepth", depthBeforePoll,
                             "audioActive", pcmActive(outbound.payload()));
                 }

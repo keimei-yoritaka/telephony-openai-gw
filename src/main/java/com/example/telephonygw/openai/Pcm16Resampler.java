@@ -1,18 +1,18 @@
 package com.example.telephonygw.openai;
 
-final class Pcm16Resampler {
+public final class Pcm16Resampler {
     private Pcm16Resampler() {
     }
 
-    static byte[] upsample(byte[] littleEndianPcm16, int sourceRateHz, int targetRateHz) {
+    public static byte[] upsample(byte[] littleEndianPcm16, int sourceRateHz, int targetRateHz) {
         return resample(littleEndianPcm16, sourceRateHz, targetRateHz);
     }
 
-    static byte[] downsample(byte[] littleEndianPcm16, int sourceRateHz, int targetRateHz) {
+    public static byte[] downsample(byte[] littleEndianPcm16, int sourceRateHz, int targetRateHz) {
         return resample(littleEndianPcm16, sourceRateHz, targetRateHz);
     }
 
-    static byte[] resample(byte[] littleEndianPcm16, int sourceRateHz, int targetRateHz) {
+    public static byte[] resample(byte[] littleEndianPcm16, int sourceRateHz, int targetRateHz) {
         if (sourceRateHz == targetRateHz) {
             return littleEndianPcm16.clone();
         }

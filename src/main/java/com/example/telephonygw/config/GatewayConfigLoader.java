@@ -48,6 +48,13 @@ public final class GatewayConfigLoader {
     private static GatewayConfig.SessionSlotConfig sessionSlot(Map<String, String> values, String slotId) {
         String prefix = "session." + slotId + ".";
         String codec = optionalValue(values, prefix + "sip.codec", "PCMU").toUpperCase(Locale.ROOT);
+        String legacyBackend = optionalValue(values, prefix + "openai.backend");
+        String backend = optionalValue(values, prefix + "voice.backend", legacyBackend.isEmpty() ? "realtime" : legacyBackend)
+                .toLowerCase(Locale.ROOT);
+        if (!legacyBackend.isEmpty() && !legacyBackend.equalsIgnoreCase(backend))
+            throw new IllegalArgumentException(prefix + "voice.backend conflicts with openai.backend");
+        if (!legacyBackend.isEmpty() && !List.of("realtime", "live", "translation").contains(legacyBackend.toLowerCase(Locale.ROOT)))
+            throw new IllegalArgumentException(prefix + "openai.backend must be realtime, live or translation");
         return new GatewayConfig.SessionSlotConfig(
                 slotId,
                 optionalValue(values, prefix + "name", slotId),
@@ -73,7 +80,7 @@ public final class GatewayConfigLoader {
                         intValue(values, prefix + "registration.registryServerPort")
                 ),
                 new GatewayConfig.OpenAiConfig(
-                        value(values, prefix + "openai.apiKey"),
+                        optionalValue(values, prefix + "openai.apiKey"),
                         optionalValue(values, prefix + "openai.realtimeModel"),
                         optionalValue(values, prefix + "openai.voice", "shimmer"),
                         optionalValue(values, prefix + "openai.maxOutputTokens", "inf"),
@@ -85,7 +92,7 @@ public final class GatewayConfigLoader {
                         booleanValue(values, prefix + "openai.transcriptLoggingEnabled", true),
                         optionalValue(values, prefix + "openai.inputTranscriptionModel", "gpt-realtime-whisper"),
                         optionalValue(values, prefix + "openai.inputTranscriptionLanguage", "ja"),
-                        optionalValue(values, prefix + "openai.backend", "realtime").toLowerCase(Locale.ROOT),
+                        backend.equals("soniox_translation") ? "realtime" : backend,
                         optionalValue(values, prefix + "openai.liveModel", "gpt-live-1"),
                         optionalValue(values, prefix + "openai.liveVoice", "marin"),
                         intValue(values, prefix + "openai.liveStartBufferFrames", 2),
@@ -97,7 +104,19 @@ public final class GatewayConfigLoader {
                 new GatewayConfig.BotConfig(
                         optionalValue(values, prefix + "bot.systemInstructions"),
                         optionalValue(values, prefix + "bot.initialGreeting", "こちらはAI電話受付です。ご用件をお話しください。")
-                )
+                ),
+                backend,
+                new GatewayConfig.SonioxConfig(
+                        optionalValue(values, prefix + "soniox.apiKey"),
+                        optionalValue(values, prefix + "soniox.sttModel", "stt-rt-v6"),
+                        java.util.Arrays.stream(optionalValue(values, prefix + "soniox.languageHints", "ja").split(",", -1))
+                                .map(String::trim).toList(),
+                        optionalValue(values, prefix + "soniox.translationTargetLanguage", "en"),
+                        intValue(values, prefix + "soniox.maxEndpointDelayMs", 1000),
+                        optionalValue(values, prefix + "soniox.ttsModel", "tts-rt-v2"),
+                        optionalValue(values, prefix + "soniox.ttsVoice", "Adrian"),
+                        doubleValue(values, prefix + "soniox.ttsSpeed", 1.0),
+                        booleanValue(values, prefix + "soniox.transcriptLoggingEnabled", false))
         );
     }
 

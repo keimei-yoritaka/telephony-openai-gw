@@ -65,6 +65,13 @@ assert.match(timeline.children[3].querySelector('.timestamp').textContent, /^翻
 run('replaceTimeline([trSource], "call-1")');
 assert.equal(timeline.children.filter(node => node.querySelector('.text').textContent === 'It is sunny').length, 1);
 
+sandbox.provisional = { ...event(6, '暫定訳', 'assistant', 'soniox-provisional'), transcriptKind: 'translation', targetLanguage: 'en' };
+sandbox.removed = { ...sandbox.provisional, id: 7, text: '' };
+run('renderEvent(provisional); renderEvent(removed); replaceTimeline([provisional], "call-1");');
+assert.equal(timeline.children.filter(node => node.querySelector('.text').textContent === '暫定訳').length, 0);
+run('renderEvent(provisional)');
+assert.equal(timeline.children.filter(node => node.querySelector('.text').textContent === '暫定訳').length, 0);
+
 (async () => {
   let respond;
   sandbox.fetch = () => new Promise(resolve => { respond = resolve; });

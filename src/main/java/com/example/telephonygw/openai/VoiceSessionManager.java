@@ -1,6 +1,9 @@
 package com.example.telephonygw.openai;
 
 import com.example.telephonygw.config.GatewayConfig.OpenAiConfig;
+import com.example.telephonygw.config.GatewayConfig.SonioxConfig;
+import com.example.telephonygw.soniox.SonioxTranslationSession;
+import com.example.telephonygw.soniox.SonioxSessionException;
 import com.example.telephonygw.config.GatewayConfig.OpenAiRuntimeConfig;
 import com.example.telephonygw.config.GatewayConfig.BotConfig;
 import com.example.telephonygw.config.GatewayConfig.SessionSlotConfig;
@@ -39,6 +42,8 @@ public final class VoiceSessionManager implements AutoCloseable {
     private final AtomicLong forwardedFrames = new AtomicLong();
     private final AtomicLong failedFrames = new AtomicLong();
     private final AtomicLong skippedFrames = new AtomicLong();
+    private final java.util.Set<String> stoppedSonioxCalls = ConcurrentHashMap.newKeySet();
+    private final Map<String, Integer> sonioxRetryAttempts = new ConcurrentHashMap<>();
     private HttpClient httpClient;
     private final SessionFactory sessionFactoryOverride;
 
@@ -69,7 +74,7 @@ public final class VoiceSessionManager implements AutoCloseable {
         if (initialized.compareAndSet(false, true)) {
             httpClient = HttpClient.newHttpClient();
             LOG.log(System.Logger.Level.INFO,
-                    "Initialized OpenAI voice session manager for {0} session slot(s)",
+                    "Initialized voice session manager for {0} session slot(s)",
                     slotConfigs.size());
             if (sessionFactoryOverride == null) warmUpAsync();
         }
@@ -83,7 +88,7 @@ public final class VoiceSessionManager implements AutoCloseable {
             return;
         }
 
-        LOG.log(System.Logger.Level.INFO, "Enabled OpenAI voice session audio forwarding");
+        LOG.log(System.Logger.Level.INFO, "Enabled voice session audio forwarding");
         GatewayEventLogger.info(LOG, "openai_audio_forwarding_enabled");
     }
 
@@ -96,6 +101,13 @@ public final class VoiceSessionManager implements AutoCloseable {
         BotConfig botConfig = runtimeConfig.botConfig();
         if (sessionFactoryOverride != null) {
             VoiceSession session = sessionFactoryOverride.create(callSessionId, config, botConfig);
+            session.open();
+            return session;
+        }
+        if (runtimeConfig.isSoniox()) {
+            SonioxTranslationSession session = new SonioxTranslationSession(callSessionId, runtimeConfig.soniox(),
+                    audioBridge, conversationEventPublisher, httpClient,
+                    () -> sessionConfigs.get(callSessionId) == runtimeConfig && initialized.get());
             session.open();
             return session;
         }
@@ -143,7 +155,7 @@ public final class VoiceSessionManager implements AutoCloseable {
     }
 
     private void warmUp() {
-        SessionRuntimeConfig runtimeConfig = slotConfigs.values().stream().filter(slot -> "realtime".equals(slot.openAiConfig().backend())).findFirst().orElse(null);
+        SessionRuntimeConfig runtimeConfig = slotConfigs.values().stream().filter(slot -> "realtime".equals(slot.backend())).findFirst().orElse(null);
         if (runtimeConfig == null) {
             return;
         }
@@ -195,15 +207,15 @@ public final class VoiceSessionManager implements AutoCloseable {
         }
         SessionRuntimeConfig runtimeConfig = requireSlotConfig(slotId);
         synchronized (sessionConfigs) { sessionConfigs.put(callSessionId, runtimeConfig); }
-        audioBridge.configureSessionBackend(callSessionId, runtimeConfig.openAiConfig().backend(),
-                runtimeConfig.openAiConfig().isTranslation() ? 2 : runtimeConfig.openAiConfig().liveStartBufferFrames());
+        audioBridge.configureSessionBackend(callSessionId, runtimeConfig.backend(),
+                runtimeConfig.isSoniox() || runtimeConfig.openAiConfig().isTranslation() ? 2 : runtimeConfig.openAiConfig().liveStartBufferFrames());
         startForwardingWorker(callSessionId, slotId);
         Thread starter = new Thread(
                 () -> startSessionAsync(callSessionId, reason),
                 "openai-session-starter-" + callSessionId.substring(0, Math.min(8, callSessionId.length())));
         starter.setDaemon(true);
         starter.start();
-        GatewayEventLogger.info(LOG, "openai_session_start_scheduled",
+        GatewayEventLogger.info(LOG, eventName(slotId, "session_start_scheduled"),
                 "sessionId", callSessionId,
                 "slotId", slotId,
                 "reason", reason);
@@ -215,12 +227,12 @@ public final class VoiceSessionManager implements AutoCloseable {
             SessionRuntimeConfig runtimeConfig = requireSessionConfig(callSessionId);
 
             LOG.log(System.Logger.Level.INFO,
-                    "Started OpenAI voice session for call start: sessionId={0}, slotId={1}, reason={2}",
+                    "Started voice session for call start: sessionId={0}, slotId={1}, reason={2}",
                     callSessionId, runtimeConfig.slotId(), reason);
-            GatewayEventLogger.info(LOG, "openai_session_started",
+            GatewayEventLogger.info(LOG, eventName(runtimeConfig.slotId(), "session_started"),
                     "sessionId", callSessionId,
                     "slotId", runtimeConfig.slotId(),
-                    "reason", reason, "backend", runtimeConfig.openAiConfig().backend());
+                    "reason", reason, "backend", runtimeConfig.backend());
         } catch (RuntimeException e) {
             if (sessionConfigs.containsKey(callSessionId)) markSessionRetry(callSessionId, e);
             failedFrames.incrementAndGet();
@@ -237,15 +249,17 @@ public final class VoiceSessionManager implements AutoCloseable {
         sessionLocks.remove(callSessionId);
 
         retryNotBeforeNanos.remove(callSessionId);
+        stoppedSonioxCalls.remove(callSessionId);
+        sonioxRetryAttempts.remove(callSessionId);
         stopForwardingWorker(callSessionId);
         int clearedFrames = audioBridge.clearOutbound(callSessionId);
         int clearedInboundFrames = audioBridge.clearInbound(callSessionId);
         if (session != null) {
             closeAsync(session);
             LOG.log(System.Logger.Level.INFO,
-                    "Closed OpenAI voice session for call close: sessionId={0}, reason={1}, clearedInboundFrames={2}, clearedOutboundFrames={3}",
+                    "Closed voice session for call close: sessionId={0}, reason={1}, clearedInboundFrames={2}, clearedOutboundFrames={3}",
                     callSessionId, reason, clearedInboundFrames, clearedFrames);
-            GatewayEventLogger.info(LOG, "openai_session_closed_for_call",
+            GatewayEventLogger.info(LOG, eventName(slotId, "session_closed_for_call"),
                     "sessionId", callSessionId,
                     "slotId", slotId,
                     "reason", reason,
@@ -253,9 +267,9 @@ public final class VoiceSessionManager implements AutoCloseable {
                     "clearedOutboundFrames", clearedFrames);
         } else if (clearedInboundFrames > 0 || clearedFrames > 0) {
             LOG.log(System.Logger.Level.INFO,
-                    "Cleared audio for closed call without active OpenAI session: sessionId={0}, reason={1}, clearedInboundFrames={2}, clearedOutboundFrames={3}",
+                    "Cleared audio for closed call without active voice session: sessionId={0}, reason={1}, clearedInboundFrames={2}, clearedOutboundFrames={3}",
                     callSessionId, reason, clearedInboundFrames, clearedFrames);
-            GatewayEventLogger.info(LOG, "openai_audio_cleared_without_session",
+            GatewayEventLogger.info(LOG, eventName(slotId, "audio_cleared_without_session"),
                     "sessionId", callSessionId,
                     "slotId", slotId,
                     "reason", reason,
@@ -273,7 +287,7 @@ public final class VoiceSessionManager implements AutoCloseable {
             closeSessions();
             httpClient = null;
             LOG.log(System.Logger.Level.INFO,
-                    "Closed OpenAI voice session manager: forwardedFrames={0}, failedFrames={1}, skippedFrames={2}",
+                    "Closed voice session manager: forwardedFrames={0}, failedFrames={1}, skippedFrames={2}",
                     forwardedFrames.get(), failedFrames.get(), skippedFrames.get());
         }
     }
@@ -295,7 +309,7 @@ public final class VoiceSessionManager implements AutoCloseable {
             } catch (RuntimeException e) {
                 failedFrames.incrementAndGet();
                 LOG.log(System.Logger.Level.WARNING,
-                        "OpenAI audio forwarding loop failed: sessionId={0}, error={1}",
+                        "Voice audio forwarding loop failed: sessionId={0}, error={1}",
                         sessionId, e.getMessage());
             }
         }
@@ -303,12 +317,12 @@ public final class VoiceSessionManager implements AutoCloseable {
 
     private void recoverTranslation(String sessionId) {
         SessionRuntimeConfig config = sessionConfigs.get(sessionId);
-        if (config == null || !config.openAiConfig().isTranslation()) return;
+        if (config == null || (!config.isSoniox() && !config.openAiConfig().isTranslation())) return;
         VoiceSession current = sessions.get(sessionId);
         if (current != null && !current.isHealthy() && sessions.remove(sessionId, current)) {
             audioBridge.clearOutbound(sessionId);
             audioBridge.clearInbound(sessionId);
-            markSessionRetry(sessionId, null);
+            markSessionRetry(sessionId, sessionFailure(current));
             closeAsync(current);
         }
         if (!isRetryCoolingDown(sessionId)) {
@@ -321,7 +335,7 @@ public final class VoiceSessionManager implements AutoCloseable {
         if (!"pcm16".equals(frame.codec())) {
             failedFrames.incrementAndGet();
             LOG.log(System.Logger.Level.WARNING,
-                    "Skipping unsupported audio frame codec for OpenAI forwarding: sessionId={0}, codec={1}",
+                    "Skipping unsupported audio frame codec for voice forwarding: sessionId={0}, codec={1}",
                     frame.sessionId(), frame.codec());
             return;
         }
@@ -354,7 +368,7 @@ public final class VoiceSessionManager implements AutoCloseable {
             long count = forwardedFrames.incrementAndGet();
             if (count == 1 || count % 250 == 0) {
                 LOG.log(System.Logger.Level.DEBUG,
-                        "Forwarded inbound audio frame to OpenAI Realtime: sessionId={0}, frames={1}",
+                        "Forwarded inbound audio frame to voice backend: sessionId={0}, frames={1}",
                         frame.sessionId(), count);
             }
         } else {
@@ -362,7 +376,7 @@ public final class VoiceSessionManager implements AutoCloseable {
             sessions.remove(frame.sessionId(), session);
             audioBridge.clearOutbound(frame.sessionId());
             audioBridge.clearInbound(frame.sessionId());
-            markSessionRetry(frame.sessionId(), null);
+            markSessionRetry(frame.sessionId(), sessionFailure(session));
             closeAsync(session);
         }
     }
@@ -384,7 +398,7 @@ public final class VoiceSessionManager implements AutoCloseable {
                 synchronized (sessionConfigs) {
                     if (!initialized.get() || sessionConfigs.get(sessionId) != expected) {
                         closeAsync(opened);
-                        throw new IllegalStateException("Call ended during OpenAI session startup");
+                        throw new IllegalStateException("Call ended during voice session startup");
                     }
                     sessions.put(sessionId, opened);
                     if (greetedCalls.add(sessionId)) opened.startInitialGreeting(expected.botConfig().initialGreeting());
@@ -398,7 +412,7 @@ public final class VoiceSessionManager implements AutoCloseable {
     }
 
     private boolean isRetryCoolingDown(String sessionId) {
-        if (!sessionConfigs.containsKey(sessionId)) return true;
+        if (!sessionConfigs.containsKey(sessionId) || stoppedSonioxCalls.contains(sessionId)) return true;
         Long retryAt = retryNotBeforeNanos.get(sessionId);
         if (retryAt == null) {
             return false;
@@ -411,8 +425,26 @@ public final class VoiceSessionManager implements AutoCloseable {
         return true;
     }
 
+    private static RuntimeException sessionFailure(VoiceSession session) {
+        return session instanceof SonioxTranslationSession soniox ? new SonioxSessionException(soniox.retryable()) : null;
+    }
+
     private void markSessionRetry(String sessionId, RuntimeException error) {
-        if (!sessionConfigs.containsKey(sessionId)) return;
+        SessionRuntimeConfig slot = sessionConfigs.get(sessionId);
+        if (slot == null) return;
+        if (slot.isSoniox()) {
+            if (error instanceof SonioxSessionException failure && !failure.retryable()) {
+                stoppedSonioxCalls.add(sessionId);
+                return;
+            }
+            int attempts = sonioxRetryAttempts.merge(sessionId, 1, Integer::sum);
+            long seconds = Math.min(60L, 15L << Math.min(2, attempts - 1));
+            long millis = java.util.concurrent.ThreadLocalRandom.current().nextLong(0, 1001);
+            retryNotBeforeNanos.put(sessionId, System.nanoTime() + Duration.ofSeconds(seconds).plusMillis(millis).toNanos());
+            GatewayEventLogger.warning(LOG, "soniox_retry_scheduled", "sessionId", sessionId,
+                    "delayMs", seconds * 1000 + millis, "attempt", attempts);
+            return;
+        }
         retryNotBeforeNanos.put(sessionId, System.nanoTime() + SESSION_RETRY_DELAY.toNanos());
         if (error == null) {
             LOG.log(System.Logger.Level.WARNING,
@@ -451,7 +483,7 @@ public final class VoiceSessionManager implements AutoCloseable {
         LOG.log(System.Logger.Level.INFO,
                 "Started OpenAI audio forwarding worker: sessionId={0}, slotId={1}",
                 sessionId, slotId);
-        GatewayEventLogger.info(LOG, "openai_audio_forwarder_started",
+        GatewayEventLogger.info(LOG, eventName(slotId, "audio_forwarder_started"),
                 "sessionId", sessionId,
                 "slotId", slotId);
     }
@@ -501,13 +533,20 @@ public final class VoiceSessionManager implements AutoCloseable {
         sessionConfigs.clear();
         sessionLocks.clear();
         retryNotBeforeNanos.clear();
+        stoppedSonioxCalls.clear();
+        sonioxRetryAttempts.clear();
         forwardingThreads.clear();
+    }
+
+    private String eventName(String slotId, String suffix) {
+        SessionRuntimeConfig slot = slotConfigs.get(slotId);
+        return (slot != null && slot.isSoniox() ? "soniox_" : "openai_") + suffix;
     }
 
     private SessionRuntimeConfig requireSlotConfig(String slotId) {
         SessionRuntimeConfig config = slotConfigs.get(slotId);
         if (config == null) {
-            throw new IllegalStateException("No OpenAI runtime config registered for slotId=" + slotId);
+            throw new IllegalStateException("No voice runtime config registered for slotId=" + slotId);
         }
         return config;
     }
@@ -515,7 +554,7 @@ public final class VoiceSessionManager implements AutoCloseable {
     private SessionRuntimeConfig requireSessionConfig(String sessionId) {
         SessionRuntimeConfig config = sessionConfigs.get(sessionId);
         if (config == null) {
-            throw new IllegalStateException("No OpenAI runtime config registered for sessionId=" + sessionId);
+            throw new IllegalStateException("No voice runtime config registered for sessionId=" + sessionId);
         }
         return config;
     }
@@ -524,11 +563,13 @@ public final class VoiceSessionManager implements AutoCloseable {
         Map<String, SessionRuntimeConfig> configs = new LinkedHashMap<>();
         for (SessionSlotConfig sessionSlot : sessionSlots) {
             configs.put(sessionSlot.slotId(),
-                    new SessionRuntimeConfig(sessionSlot.slotId(), sessionSlot.openAi(), sessionSlot.bot()));
+                    new SessionRuntimeConfig(sessionSlot.slotId(), sessionSlot.openAi(), sessionSlot.bot(), sessionSlot.backend(), sessionSlot.soniox()));
         }
         return Map.copyOf(configs);
     }
 
-    private record SessionRuntimeConfig(String slotId, OpenAiConfig openAiConfig, BotConfig botConfig) {
+    private record SessionRuntimeConfig(String slotId, OpenAiConfig openAiConfig, BotConfig botConfig,
+            String backend, SonioxConfig soniox) {
+        boolean isSoniox() { return "soniox_translation".equals(backend); }
     }
 }
