@@ -33,6 +33,7 @@ public final class SonioxIntegrationCheck {
         failuresAndLifecycle();
         boundedQueues();
         additionalContracts();
+        englishToJapanese();
         System.out.println("Soniox integration checks passed: " + checks);
     }
 
@@ -52,6 +53,8 @@ public final class SonioxIntegrationCheck {
                     new String[]{"soniox.apiKey: ${SONIOX_API_KEY}", "soniox.apiKey: \"\""},
                     new String[]{"soniox.translationTargetLanguage: en", "soniox.translationTargetLanguage: ja"},
                     new String[]{"soniox.languageHints: ja", "soniox.languageHints: en"},
+                    new String[]{"soniox.translationTargetLanguage: en", "soniox.translationTargetLanguage: fr"},
+                    new String[]{"soniox.languageHints: ja", "soniox.languageHints: ja,en"},
                     new String[]{"soniox.maxEndpointDelayMs: 1000", "soniox.maxEndpointDelayMs: 499"},
                     new String[]{"soniox.ttsSpeed: 1.0", "soniox.ttsSpeed: NaN"},
                     new String[]{"soniox.ttsSpeed: 1.0", "soniox.ttsSpeed: 1.4"})) {
@@ -272,9 +275,62 @@ public final class SonioxIntegrationCheck {
         }
     }
 
+    private static void englishToJapanese() throws Exception {
+        var reverse = GatewayConfigLoader.load(Path.of("config/gateway.soniox.en-ja.example.yaml")).sessions().get(3).soniox();
+        check(reverse.languageHints().equals(List.of("en")) && reverse.translationTargetLanguage().equals("ja"),
+                "English to Japanese config accepted");
+        try (Fixture f = new Fixture(reverse)) {
+            f.open();
+            JsonObject start = f.stt.messages.getFirst();
+            check(start.getAsJsonObject("translation").get("target_language").getAsString().equals("ja"), "STT target is Japanese");
+            check(start.getAsJsonArray("language_hints").get(0).getAsString().equals("en"), "STT source hint is English");
+            check(f.hub.latestEvents().stream().anyMatch(e -> e.transcriptKind().equals("status")
+                    && e.targetLanguage().equals("ja") && e.text().contains("英語から日本語")), "reverse direction status");
+            f.stt.tokens(token("Good morning.", true, "original", "en"), token("おはよう", false, "translation", "ja"));
+            check(f.tts.texts().isEmpty(), "English source and provisional Japanese are not spoken");
+            f.stt.tokens(token("おはようございます。", true, "translation", "ja"));
+            check(f.tts.texts().equals(List.of("おはようございます。")), "confirmed Japanese is spoken once");
+            check(f.tts.messages.getFirst().get("language").getAsString().equals("ja"), "TTS uses Japanese language");
+            check(f.tts.messages.getFirst().get("voice").getAsString().equals(reverse.ttsVoice()), "configured voice retained across directions");
+            check(f.hub.latestEvents().stream().anyMatch(e -> e.transcriptKind().equals("translation")
+                    && e.targetLanguage().equals("ja") && e.text().equals("おはようございます。")), "Japanese subtitle metadata");
+            for (int rate : List.of(8000, 16000)) {
+                f.bridge.setSessionSampleRate("sx", rate);
+                if (rate == 16000) f.stt.tokens(token("次の文です。", true, "translation", "ja"));
+                String stream = f.tts.stream();
+                f.tts.audio(stream, new byte[960], true); f.tts.terminate(stream);
+                check(f.bridge.pollOutbound("sx").payload().length == rate / 50 * 2, "Japanese TTS playout at " + rate);
+            }
+            int spoken = f.tts.texts().size();
+            f.stt.tokens(token("Wrong target.", true, "translation", "en"));
+            check(f.tts.texts().size() == spoken, "mismatched language never forwarded to Japanese TTS");
+        }
+        try (Fixture forward = new Fixture()) {
+            forward.open();
+            forward.bridge.configureSessionBackend("reverse", "soniox_translation", 2);
+            Socket stt = new Socket(false), tts = new Socket(true);
+            SonioxTranslationSession reverseSession = new SonioxTranslationSession("reverse", reverse,
+                    forward.bridge, forward.hub, forward.active::get, stt::connect, tts::connect, false, Duration.ofMillis(30));
+            reverseSession.open();
+            forward.stt.tokens(token("English.", true, "translation", "en"));
+            stt.tokens(token("日本語です。", true, "translation", "ja"));
+            check(forward.tts.texts().equals(List.of("English.")) && tts.texts().equals(List.of("日本語です。")),
+                    "simultaneous opposite directions isolate TTS text");
+            check(forward.tts.messages.getFirst().get("language").getAsString().equals("en")
+                    && tts.messages.getFirst().get("language").getAsString().equals("ja"), "per-slot TTS language isolation");
+            check(forward.hub.eventsForSession("sx").stream().anyMatch(e -> e.targetLanguage().equals("en"))
+                    && forward.hub.eventsForSession("reverse").stream().anyMatch(e -> e.targetLanguage().equals("ja")),
+                    "per-call subtitle target isolation");
+            reverseSession.close();
+        }
+    }
+
     private static String token(String text, boolean confirmed, String status) {
+        return token(text, confirmed, status, status.equals("translation") ? "en" : "ja");
+    }
+    private static String token(String text, boolean confirmed, String status, String language) {
         return "{\"text\":" + SonioxSocket.JSON.toJson(text) + ",\"is_final\":" + confirmed
-                + ",\"translation_status\":\"" + status + "\",\"language\":\"" + (status.equals("translation") ? "en" : "ja") + "\"}";
+                + ",\"translation_status\":\"" + status + "\",\"language\":\"" + language + "\"}";
     }
     private static AudioFrame frame(String id, int rate) {
         return new AudioFrame(id, AudioFrame.Direction.INBOUND, 1, new byte[rate / 50 * 2], "pcm16", rate, 20, Instant.now());
@@ -293,12 +349,15 @@ public final class SonioxIntegrationCheck {
         final Socket stt = new Socket(false);
         final Socket tts = new Socket(true);
         final SonioxTranslationSession session;
-        Fixture() {
+        final GatewayConfig.SonioxConfig selectedConfig;
+        Fixture() { this(config.sessions().get(3).soniox()); }
+        Fixture(GatewayConfig.SonioxConfig selectedConfig) {
+            this.selectedConfig = selectedConfig;
             bridge.configureSessionBackend("sx", "soniox_translation", 2); bridge.setSessionSampleRate("sx", 8000);
             session = create(stt::connect, false);
         }
         SonioxTranslationSession create(java.util.function.Function<WebSocket.Listener, CompletableFuture<WebSocket>> connector, boolean timer) {
-            return new SonioxTranslationSession("sx", config.sessions().get(3).soniox(), bridge, hub, active::get,
+            return new SonioxTranslationSession("sx", selectedConfig, bridge, hub, active::get,
                     connector, tts::connect, timer, Duration.ofMillis(30));
         }
         void open() { session.open(); }

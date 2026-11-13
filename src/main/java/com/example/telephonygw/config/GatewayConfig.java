@@ -211,14 +211,20 @@ public record GatewayConfig(
     public record SonioxConfig(String apiKey, String sttModel, List<String> languageHints,
             String translationTargetLanguage, int maxEndpointDelayMs, String ttsModel,
             String ttsVoice, double ttsSpeed, boolean transcriptLoggingEnabled) {
+        public String directionLabel() {
+            return translationTargetLanguage.equals("ja") ? "英語から日本語" : "日本語から英語";
+        }
+
         public void validate(String prefix) {
             require(prefix + ".apiKey", apiKey);
             require(prefix + ".sttModel", sttModel);
             require(prefix + ".ttsModel", ttsModel);
             require(prefix + ".ttsVoice", ttsVoice);
-            requireEquals(prefix + ".translationTargetLanguage", translationTargetLanguage, "en");
-            if (!languageHints.equals(List.of("ja")))
-                throw new IllegalArgumentException(prefix + ".languageHints must be ja for the initial Japanese to English backend");
+            if (!Set.of("en", "ja").contains(translationTargetLanguage))
+                throw new IllegalArgumentException(prefix + ".translationTargetLanguage must be en or ja");
+            String source = translationTargetLanguage.equals("en") ? "ja" : "en";
+            if (!languageHints.equals(List.of(source)))
+                throw new IllegalArgumentException(prefix + ".languageHints must be " + source + " for the selected translation direction");
             requireRange(prefix + ".maxEndpointDelayMs", maxEndpointDelayMs, 500, 3000);
             if (!Double.isFinite(ttsSpeed) || ttsSpeed < 0.7 || ttsSpeed > 1.3)
                 throw new IllegalArgumentException(prefix + ".ttsSpeed must be between 0.7 and 1.3");

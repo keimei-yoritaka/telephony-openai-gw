@@ -430,3 +430,7 @@ Sonioxはスロットの`voice.backend: soniox_translation`で有効化する。
 実行ユーザーに`SONIOX_API_KEY`を渡し、実値をcommitしない。既存設定はそのまま使える。SonioxスロットにはOpenAI keyが不要で、既存OpenAIスロットにSoniox keyは不要。混在例は[config/gateway.soniox.example.yaml](../config/gateway.soniox.example.yaml)、適用・検証は[RHEL差分手順](rhel-update-patch-guide.md)を参照する。
 
 実API／実通話は利用環境で確認する。STT接続中は無音も費用評価に含め、翻訳textとTTS生成分を合算する。mainへのmerge・Stableタグ変更・releaseはこの追加に含めない。
+
+### Sonioxの英→日への切替
+
+Sonioxスロットで`soniox.languageHints: en`と`soniox.translationTargetLanguage: ja`を指定すると、英語の原文字幕、日本語の翻訳字幕、日本語TTSを同じ電話で扱う。既定の日→英は`ja / en`を維持する。片方向をスロットごとに指定し、設定変更後は再起動する。voice・認証・接続先・native libraryの変更は不要。完全な例は[英→日設定例](../config/gateway.soniox.en-ja.example.yaml)を参照する。

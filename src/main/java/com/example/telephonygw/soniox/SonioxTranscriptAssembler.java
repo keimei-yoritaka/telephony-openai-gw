@@ -12,13 +12,14 @@ import java.util.function.Consumer;
 /** Final tokens append once; the entire provisional tail is replaced on every response. */
 final class SonioxTranscriptAssembler {
     private final String sessionId;
+    private final String targetLanguage;
     private final ConversationEventPublisher publisher;
     private final String generation = UUID.randomUUID().toString();
     private final Map<String, Segment> segments = new LinkedHashMap<>();
     private long nextId;
 
-    SonioxTranscriptAssembler(String sessionId, ConversationEventPublisher publisher) {
-        this.sessionId = sessionId; this.publisher = publisher;
+    SonioxTranscriptAssembler(String sessionId, String targetLanguage, ConversationEventPublisher publisher) {
+        this.sessionId = sessionId; this.targetLanguage = targetLanguage; this.publisher = publisher;
     }
 
     void accept(JsonArray tokens, Consumer<String> translation, Runnable endpoint) {
@@ -44,7 +45,7 @@ final class SonioxTranscriptAssembler {
             }
             if (confirmed) {
                 segment.committed.append(text);
-                if (kind.equals("translation") && SonioxSocket.string(token, "language").equals("en")) translation.accept(text);
+                if (kind.equals("translation") && SonioxSocket.string(token, "language").equals(targetLanguage)) translation.accept(text);
             } else segment.provisional.append(text);
             if (segment.committed.length() + segment.provisional.length() > 32768)
                 throw new IllegalArgumentException("Transcript segment too large");
@@ -56,7 +57,7 @@ final class SonioxTranscriptAssembler {
         String text = segment.committed.toString() + segment.provisional;
         if (text.equals(segment.published)) return;
         segment.published = text;
-        publisher.publishTranslationSnapshot(sessionId, kind, kind.equals("translation") ? "en" : "",
+        publisher.publishTranslationSnapshot(sessionId, kind, kind.equals("translation") ? targetLanguage : "",
                 segment.id, "", text, segment.timestamp, -1);
     }
 

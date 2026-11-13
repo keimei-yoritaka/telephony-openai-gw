@@ -304,18 +304,18 @@ SIP切断時は共通queueを停止し、別workerで入力clockを停止する�
 
 ## Soniox translation backend設計
 
-`session.<slotId>.voice.backend: soniox_translation`で、日→英の同一通話への音声返送と原文／翻訳字幕を選択する。`voice.backend`を省略すると従来の`openai.backend`、それも省略すると`realtime`となる。両キーを明示して値が異なる場合は設定エラー。新キーは既存3値も選択可能だが、従来キーにSoniox値は追加しない。OpenAI専用translationのprotocol・音声clock・設定・日→英処理は変更しない。
+`session.<slotId>.voice.backend: soniox_translation`で、日→英または英→日の同一通話への音声返送と原文／翻訳字幕を選択する。`voice.backend`を省略すると従来の`openai.backend`、それも省略すると`realtime`となる。両キーを明示して値が異なる場合は設定エラー。新キーは既存3値も選択可能だが、従来キーにSoniox値は追加しない。OpenAI専用translationのprotocol・音声clock・設定・日→英処理は変更しない。
 
 ### 設定と責務
 
-各スロットの`soniox.*`で認証・STT・TTSを独立指定する。SonioxスロットにOpenAI keyやbot設定は不要。完全な混在例は[Soniox設定例](../config/gateway.soniox.example.yaml)、調査と検証記録は[実装計画](soniox-translation-implementation-plan.md)を参照する。
+各スロットの`soniox.*`で認証・STT・TTSを独立指定する。SonioxスロットにOpenAI keyやbot設定は不要。完全な混在例は[Soniox日→英設定例](../config/gateway.soniox.example.yaml)と[英→日設定例](../config/gateway.soniox.en-ja.example.yaml)、調査と検証記録は[実装計画](soniox-translation-implementation-plan.md)を参照する。
 
 | キー | 既定値・検証 |
 | --- | --- |
 | `soniox.apiKey` | 必須。`${SONIOX_API_KEY}`などから渡す |
 | `soniox.sttModel` | `stt-rt-v6` |
-| `soniox.languageHints` | `ja`。初期版ではこの1言語のみ。入力排除の保証ではない |
-| `soniox.translationTargetLanguage` | `en`。初期版では英語のみ |
+| `soniox.languageHints` | `ja`（既定）または`en`の1言語。翻訳先と反対の言語を指定する。入力排除の保証ではない |
+| `soniox.translationTargetLanguage` | `en`（既定）または`ja` |
 | `soniox.maxEndpointDelayMs` | `1000`。500～3000ms |
 | `soniox.ttsModel` | `tts-rt-v2` |
 | `soniox.ttsVoice` | `Adrian`。Soniox voice名を指定 |
@@ -326,17 +326,17 @@ SIP切断時は共通queueを停止し、別workerで入力clockを停止する�
 
 ### 入力と字幕
 
-STT接続先は`wss://stt-rt.soniox.com/transcribe-websocket`。接続時Bearer認証、開始JSON後に20ms binary PCM16LE / mono / 16kHzを送る。PCMU由来8kHzはresampleし、G.722由来16kHzはそのまま送る。`translation: {type: one_way, target_language: en}`、言語識別とendpoint検出を有効にする。OpenAIのcreated／readyイベントは待たず、開始送信後に入力を許可する。認証エラーはopen後にも到着するため継続監視する。
+STT接続先は`wss://stt-rt.soniox.com/transcribe-websocket`。接続時Bearer認証、開始JSON後に20ms binary PCM16LE / mono / 16kHzを送る。PCMU由来8kHzはresampleし、G.722由来16kHzはそのまま送る。`translation: {type: one_way, target_language: <設定の目的言語>}`、言語識別とendpoint検出を有効にする。日→英は`languageHints: ja / translationTargetLanguage: en`、英→日は`en / ja`を指定する。同一言語の組合せや複数ヒントは設定エラー。既存日→英の既定値は変更しない。OpenAIのcreated／readyイベントは待たず、開始送信後に入力を許可する。認証エラーはopen後にも到着するため継続監視する。
 
 PJSUA2の無音PCM frameも送り、空payloadのnative callbackは音声を捏造せず読み飛ばす。入力が途切れると5秒ごとにSTT keepaliveを送る。OpenAI translationの200ms／無音生成clockは使用しない。各socketは送信待ち100件、送信timeout5秒、接続timeout10秒、受信JSON8Mi文字まで。順序を保ち、overflowでは停止する。
 
 確定tokenは追加し、未確定tokenはresponseごとに置換する。原文／翻訳を独立表示し、4秒または確定本文512文字を目安に表示segmentを更新する。未確定tailの消失を空snapshotでも配信し、HubとUIは削除情報を保持して古い履歴からの復活を防ぐ。字幕segmentは最大32768文字。表示IDは接続世代付き`soniox-*`で、API event ID・原文と訳文の架空の1対1時刻対応を作らない。訳文の原音声時刻は`-1`、表示はAPI確定turnを意味しない。`<end>`／`<fin>`は画面・TTSへ渡さない。[STT仕様](https://docs.soniox.com/api-reference/stt/websocket-api)
 
-### 確定英訳とTTS再生
+### 確定訳文とTTS再生
 
-`is_final: true`かつ翻訳tokenの`language: en`だけをTTSへ送る。句読点、確定制御token、未送信確定訳の先頭から500ms、512文字のいずれかで短い単位を作る。空白・繰り返しを保持し、未確定字幕の訂正を読み上げない。これはアプリ側の音声生成単位で、文全体の韻律や遅延は実機評価が必要。
+`is_final: true`かつ翻訳tokenの`language`が設定の目的言語と一致する訳文だけをTTSへ送る。句読点、確定制御token、未送信確定訳の先頭から500ms、512文字のいずれかで短い単位を作る。空白・繰り返しを保持し、未確定字幕の訂正を読み上げない。これはアプリ側の音声生成単位で、文全体の韻律や遅延は実機評価が必要。
 
-TTS接続先は`wss://tts-rt.soniox.com/tts-websocket`。1通話1接続・同時1streamを使い、設定JSON→`text / text_end: true`を送る。`audio_end`で音声をflushし、`terminated`を待って次のstreamを開始する。応答audioはraw PCM16LE / mono / 24kHzを明示し、`StreamingAudioDecoder`で20ms化して通話sample rateへ変換する。stream境界で残PCMをflush／clearし、奇数byteを次streamへ混ぜない。
+TTS接続先は`wss://tts-rt.soniox.com/tts-websocket`。TTSの`language`と字幕・接続状態の`targetLanguage`は設定値に従い、モニターは「翻訳（英語）」／「翻訳（日本語）」を表示する。同じvoiceを両方向で使える。1通話1接続・同時1streamを使い、設定JSON→`text / text_end: true`を送る。`audio_end`で音声をflushし、`terminated`を待って次のstreamを開始する。応答audioはraw PCM16LE / mono / 24kHzを明示し、`StreamingAudioDecoder`で20ms化して通話sample rateへ変換する。stream境界で残PCMをflush／clearし、奇数byteを次streamへ混ぜない。
 
 再生開始bufferは2 frame。TTS待ちは最大10単位・4096文字、未送信単位は最大512文字、各streamの完了待ちは60秒。20秒無送信でTTS接続keepaliveを送る。Sonioxのoutbound queueは共通設定容量と500 frame（10秒）の小さい方で制限し、frame拒否を障害として扱う。他backendのdecoder／queue拒否時の方針は変えない。生成完了とRTP実再生完了は別に扱う。
 

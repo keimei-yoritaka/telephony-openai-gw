@@ -14,7 +14,7 @@
 
 ## Soniox translation Experimentalを適用する場合
 
-Soniox追加版は`codex/experimental`の実装で、日→英の同一電話への音声返送＋原文／英訳字幕を扱う。既存3方式は維持する。ローカル実装だけでpushされていない場合、RHELで取得できるのは従来版なので、反映対象commitとGitHubへの反映を確認してから更新する。mainへのmerge、Stableタグ変更、新規releaseは不要。
+Soniox追加版は`codex/experimental`の実装で、日→英／英→日の同一電話への音声返送＋原文／翻訳字幕を扱う。既存3方式は維持する。ローカル実装だけでpushされていない場合、RHELで取得できるのは従来版なので、反映対象commitとGitHubへの反映を確認してから更新する。mainへのmerge、Stableタグ変更、新規releaseは不要。
 
 停止・退避・Git更新は下記の既存translation手順と同じ。実際のsystemd `ExecStart`と設定先を確認し、SIP情報・`.deps`・機密設定を保全する。native処理追加はないため、正常な既存PJSUA2成果物の再buildは通常不要。
 
@@ -35,7 +35,9 @@ session.session-4:
   soniox.transcriptLoggingEnabled: false
 ```
 
-SIP等を含む完全な例は[Soniox混在設定例](../config/gateway.soniox.example.yaml)。systemdから環境変数を渡す場合は実行環境に`SONIOX_API_KEY`を設定し、値をRepository・ログ・共有文書へ含めない。SonioxのSTTとTTS両方の権限・残高・同時枠、利用リージョンと保存条件を確認する。`stt-rt.soniox.com:443`と`tts-rt.soniox.com:443`へのHTTPS／WSSが必要。実際のリージョンに別接続先が必要な場合は、公開接続先を使う今回の実装をそのまま適用せず調整する。
+英→日に切り替える場合は、対象Sonioxスロットの`soniox.languageHints: en`と`soniox.translationTargetLanguage: ja`を一緒に指定する。既定は日→英の`ja / en`。voiceとAPI keyはそのまま利用でき、TTSの発声言語と字幕ラベルが翻訳先へ切り替わる。各スロットは片方向であり、自動双方向通訳ではない。実行設定を退避してから変更し、サービスを再起動する。他のRealtime／Live／OpenAI translationスロットは変更不要。
+
+SIP等を含む完全な例は[Soniox混在設定例](../config/gateway.soniox.example.yaml)。 英→日の完全な例は[英→日設定例](../config/gateway.soniox.en-ja.example.yaml)。systemdから環境変数を渡す場合は実行環境に`SONIOX_API_KEY`を設定し、値をRepository・ログ・共有文書へ含めない。SonioxのSTTとTTS両方の権限・残高・同時枠、利用リージョンと保存条件を確認する。`stt-rt.soniox.com:443`と`tts-rt.soniox.com:443`へのHTTPS／WSSが必要。実際のリージョンに別接続先が必要な場合は、公開接続先を使う今回の実装をそのまま適用せず調整する。
 
 更新後は次を確認し、通常起動で待ち受ける。設定例を実環境設定へ丸ごと上書きしない。
 

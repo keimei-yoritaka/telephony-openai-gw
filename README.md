@@ -74,7 +74,7 @@ node src/test/js/monitor-check.cjs
 
 ## ExperimentalのSoniox translation
 
-`voice.backend: soniox_translation`でSonioxを追加のAgentとして選べます。日→英を同じ電話へ音声で返し、原文／翻訳字幕をモニターに表示します。Soniox STTの内蔵翻訳とSoniox TTSを組み合わせ、既存Realtime／Live／OpenAI translationは引き続き利用できます。
+`voice.backend: soniox_translation`でSonioxを追加のAgentとして選べます。日→英または英→日を同じ電話へ音声で返し、原文／翻訳字幕をモニターに表示します。Soniox STTの内蔵翻訳とSoniox TTSを組み合わせ、既存Realtime／Live／OpenAI translationは引き続き利用できます。
 
 ```yaml
 session.session-4:
@@ -93,11 +93,20 @@ session.session-4:
 
 上記は抜粋です。SIP設定を含む4方式共存例は[config/gateway.soniox.example.yaml](config/gateway.soniox.example.yaml)です。SonioxスロットにOpenAI key・bot設定は不要です。`voice.backend`未指定では従来の`openai.backend`を使い、両方未指定なら`realtime`です。両キーの値が異なる場合は設定エラーになるため、既存スロットを切り替えるときは古い`openai.backend`を削除してください。
 
-確定した英訳だけを短い単位でTTSへ送り、未確定字幕は改訂表示します。TTSの音声生成中も電話入力は継続します。挨拶・業務tool・delegation・別通話への中継・two-wayは含みません。短い音声単位の自然さ、実遅延、受話音の回り込みは実機で評価してください。
+英→日にする場合は、対象Sonioxスロットの次の2項目を一緒に変更します。既定の日→英は維持されています。英→日の完全な例は[config/gateway.soniox.en-ja.example.yaml](config/gateway.soniox.en-ja.example.yaml)です。
+
+```yaml
+  soniox.languageHints: en
+  soniox.translationTargetLanguage: ja
+```
+
+各スロットは片方向です。同じ通話での自動双方向切替や別通話中継は行いません。設定変更後はサービスを再起動してください。voiceは両方向で共通に指定でき、TTSの発声言語は翻訳先に合わせます。
+
+確定した目的言語の訳文だけを短い単位でTTSへ送り、未確定字幕は改訂表示します。TTSの音声生成中も電話入力は継続します。挨拶・業務tool・delegation・別通話への中継・two-wayは含みません。短い音声単位の自然さ、実遅延、受話音の回り込みは実機で評価してください。
 
 接続障害時は15～60秒＋jitterで再接続し、過去音声・未再生訳は再送しません。認証・設定・残高等のエラーでは自動再試行を止めます。Sonioxの`soniox_error`とモニター状態を確認し、設定・権限・残高を修正後にかけ直してください。終了時は残字幕を最大15秒受信し、TTSのcancel確認を最大5秒待ちます。電話切断後の音声は再生しません。
 
-STTの無音を含む接続時間、原文／翻訳text、TTSの利用量で費用が発生します。[公式構成](https://docs.soniox.com/translation/sts-translation)と[料金](https://soniox.com/pricing)を参照してください。実API・実通話・RHELでの品質／費用は未検証です。[実装計画・検証記録](docs/soniox-translation-implementation-plan.md)、[RHEL反映手順](docs/rhel-update-patch-guide.md)に詳細を記載しています。
+STTの無音を含む接続時間、原文／翻訳text、TTSの利用量で費用が発生します。[公式構成](https://docs.soniox.com/translation/sts-translation)と[料金](https://soniox.com/pricing)を参照してください。ユーザーからSonioxの日→英の正常動作報告を受けています。英→日の実通話品質と詳細な課金・負荷は未確認です。[実装計画・検証記録](docs/soniox-translation-implementation-plan.md)、[RHEL反映手順](docs/rhel-update-patch-guide.md)に詳細を記載しています。
 
 ```sh
 scripts/check-config.sh config/gateway.soniox.example.yaml

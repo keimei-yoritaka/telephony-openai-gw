@@ -69,7 +69,7 @@ public final class SonioxTranslationSession implements VoiceSession {
         this.callActive = callActive; this.automaticTimer = automaticTimer; this.closeTimeout = closeTimeout;
         stt = new SonioxSocket(lock, this::receive, code -> fail(code, new JsonObject()), sttConnector);
         tts = new SonioxTtsClient(id, config, bridge, this::canPlay, lock, this::fail, ttsConnector);
-        transcripts = new SonioxTranscriptAssembler(id, publisher);
+        transcripts = new SonioxTranscriptAssembler(id, config.translationTargetLanguage(), publisher);
     }
 
     @Override public void open() {
@@ -88,14 +88,15 @@ public final class SonioxTranslationSession implements VoiceSession {
                         "sample_rate", 16000, "num_channels", 1, "language_hints", config.languageHints(),
                         "enable_language_identification", true, "enable_endpoint_detection", true,
                         "max_endpoint_delay_ms", config.maxEndpointDelayMs(),
-                        "translation", Map.of("type", "one_way", "target_language", "en")));
+                        "translation", Map.of("type", "one_way", "target_language", config.translationTargetLanguage())));
             }
             configured.get(5, TimeUnit.SECONDS);
             synchronized (lock) {
                 requireActive(); ready = true;
-                status("接続済み：Sonioxで日本語から英語へ翻訳中（認証エラーは後着する場合があります）");
+                status("接続済み：Sonioxで" + config.directionLabel() + "へ翻訳中（認証エラーは後着する場合があります）");
                 GatewayEventLogger.info(LOG, "soniox_session_started", "sessionId", id,
-                        "model", config.sttModel(), "ttsModel", config.ttsModel(), "voice", config.ttsVoice());
+                        "model", config.sttModel(), "ttsModel", config.ttsModel(), "voice", config.ttsVoice(),
+                        "targetLanguage", config.translationTargetLanguage());
                 if (automaticTimer) timer.scheduleAtFixedRate(this::tick, 100, 100, TimeUnit.MILLISECONDS);
             }
         } catch (Exception error) {
@@ -192,7 +193,7 @@ public final class SonioxTranslationSession implements VoiceSession {
     }
 
     private void status(String text) {
-        publisher.publishTranslationSnapshot(id, "status", "en", "soniox-" + generation + "-status-" + (++statusSequence),
+        publisher.publishTranslationSnapshot(id, "status", config.translationTargetLanguage(), "soniox-" + generation + "-status-" + (++statusSequence),
                 "", text, Instant.now(), -1);
     }
 

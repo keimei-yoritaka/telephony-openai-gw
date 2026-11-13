@@ -69,7 +69,7 @@ function appendEventToTimeline(event) {
   // Streaming events are full display snapshots, never deltas to append again.
   node.querySelector(".text").textContent = event.text;
   const kind = event.transcriptKind === "status" ? "翻訳状態" : event.transcriptKind === "source" ? "原文"
-    : event.transcriptKind === "translation" ? `翻訳（${event.targetLanguage === "en" ? "英語" : event.targetLanguage}）` : "";
+    : event.transcriptKind === "translation" ? `翻訳（${event.targetLanguage === "en" ? "英語" : event.targetLanguage === "ja" ? "日本語" : event.targetLanguage}）` : "";
   node.querySelector(".timestamp").textContent = `${kind ? kind + " · " : ""}${formatTimestamp(event.timestamp)}`;
   timeline.scrollTop = timeline.scrollHeight;
 }

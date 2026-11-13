@@ -82,7 +82,7 @@ final class SonioxTtsClient {
         terminated = new CompletableFuture<>();
         decoder.clear();
         bridge.markOutboundActive(sessionId);
-        socket.json(Map.of("stream_id", streamId, "model", config.ttsModel(), "language", "en",
+        socket.json(Map.of("stream_id", streamId, "model", config.ttsModel(), "language", config.translationTargetLanguage(),
                 "voice", config.ttsVoice(), "speed", config.ttsSpeed(), "audio_format", "pcm_s16le", "sample_rate", 24000));
         if (!stopping) socket.json(Map.of("stream_id", streamId, "text", text, "text_end", true));
     }

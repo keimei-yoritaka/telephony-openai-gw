@@ -4,6 +4,8 @@
 
 ## 状態と確定した用途
 
+2026-11-13に英→日の追加実装依頼を受領し、両方向の片方向翻訳へ拡張した。以下の初期計画の日→英限定事項は初版時点の記録であり、現行仕様は[設計書](system-design.md)と末尾の英→日拡張記録を参照する。
+
 2026-11-11に計画を提示し、2026-11-12にユーザーから「計画に沿って実装」の承認を受領した。計画作成時は本書だけを追加し、承認後にコード・設定例・現行設計書・draw.ioを同じ変更単位で更新した。実装結果と検証範囲は末尾に記録する。
 
 ユーザー回答により、初期用途は**日→英・同じ電話へ翻訳音声返送＋原文／翻訳字幕**と確定した。Sonioxを独立したAgent（スロット別voice backend）として追加する。既存realtime、GPT-Live（live）、OpenAI translationを維持し、動作確認済みのOpenAI translationの日→英処理は変更しない。
@@ -218,3 +220,17 @@ Java 21 `HttpClient.WebSocket`と既存Gsonを使う方針で、新規SDK・nati
 - Gitは`codex/experimental`、HEADは開始時の`4a65071`のまま。変更は未コミット。`bin/`と機密設定は変更していない。
 
 STT／TTS WebSocket公式仕様は2026-11-12にも再確認した。実API接続、実際のSoniox voice試聴、RHEL実通話、codec別品質、課金、長時間・実負荷、ブラウザ／draw.ioの外観確認は今回未実施。オフラインの音声変換・接続lifecycle検証と区別する。
+
+
+## 英→日拡張（2026-11-13）
+
+ユーザーからSoniox日→英の正常動作報告を受領し、英→日も実装するよう依頼を受けた。APIの`one_way`と日本語／英語対応、voiceの言語切替を[公式翻訳仕様](https://docs.soniox.com/translation/stt-translation)、[対応言語](https://docs.soniox.com/translation/supported-languages)、[voice仕様](https://docs.soniox.com/tts/concepts/voices)で再確認した。
+
+- `soniox.languageHints: en`と`soniox.translationTargetLanguage: ja`で英→日を選択する。既定は従来の`ja / en`。スロットごとの片方向翻訳であり、two-wayや別通話中継は追加しない。
+- STT翻訳先、確定訳のTTS送信対象、TTS発声言語、字幕の目的言語、接続状態文言を設定へ追従させた。日本語訳のUIラベルを「翻訳（日本語）」とする。voice・PCM・queue・終了・再接続方針は維持した。
+- 入力ヒントは目的言語と反対の1言語だけを許可する。同一言語の組合せ、他言語、複数ヒントは設定エラーとする。言語ヒントは厳密な入力言語制限を意味しない。
+- `config/gateway.soniox.en-ja.example.yaml`を追加し、README、現行設計書、draw.io、RHEL／デプロイ手順を同時更新した。機密設定と未追跡`bin/`はRepositoryの変更対象外。
+- 既存41項目、OpenAI translation54項目、Soniox98項目（合計193項目）と共有managerの追加検証が成功。英→日のSTT設定、未確定字幕、確定日本語TTS、voice維持、日本語字幕metadata、8kHz／16kHz再生、目的言語不一致の読み上げ抑止、逆方向同時通話の分離を検証した。
+- UI検証は日本語ラベルと既存snapshot／履歴競合を確認。英→日設定例の読み込み、オフラインGradle checkが成功した。
+
+日→英の実通話成功はユーザー報告で確認済み。英→日の実API・日本語音声品質は、オフライン検証だけでは確認できないため、RHEL反映後の実通話確認と区別する。
