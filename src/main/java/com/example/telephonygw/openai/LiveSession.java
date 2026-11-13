@@ -156,7 +156,7 @@ public final class LiveSession implements VoiceSession {
 
     @Override public void startInitialGreeting(String greeting) {
         if (!canStream() || !greeted.compareAndSet(false, true)) return;
-        appendInstruction("日本語で今すぐ次の挨拶を自然に話してから、相手の発話を聞いてください: " + greeting, null);
+        appendInstruction("Say the following greeting naturally in the language required by the session instructions, then listen: " + greeting, null);
     }
 
     private void appendInstruction(String content, String delegationId) {

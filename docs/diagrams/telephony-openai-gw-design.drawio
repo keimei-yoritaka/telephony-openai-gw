@@ -219,7 +219,7 @@
           <mxPoint x="410" y="271" as="targetPoint" />
         </mxGeometry>
       </mxCell>
-      <mxCell id="live-message-4" value="session.instructions.append / greeting once" style="endArrow=block;html=1;fontSize=11;" edge="1" parent="1">
+      <mxCell id="live-message-4" value="session.instructions.append / greeting once / follow session language" style="endArrow=block;html=1;fontSize=11;" edge="1" parent="1">
         <mxGeometry relative="1" as="geometry">
           <mxPoint x="410" y="313" as="sourcePoint" />
           <mxPoint x="700" y="313" as="targetPoint" />

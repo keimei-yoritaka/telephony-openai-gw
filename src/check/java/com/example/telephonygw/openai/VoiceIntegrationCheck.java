@@ -88,6 +88,25 @@ public final class VoiceIntegrationCheck {
         session.startInitialGreeting("duplicate");
         check(fake.count("session.instructions.append") == 1, "greeting sent once");
         check(fake.sent.getLast().get("delegation_id").isJsonNull(), "greeting nullable ID encoded");
+        String japaneseGreeting = fake.sent.getLast().get("content").getAsString();
+        check(japaneseGreeting.endsWith("こんにちは") && !japaneseGreeting.contains("日本語で"),
+                "Japanese greeting preserved without a forced output language");
+        FakeSocket englishSocket = new FakeSocket();
+        var englishBot = new GatewayConfig.BotConfig("Speak English only throughout the entire call.",
+                "Hello, this is Japao speaking. May I help you?");
+        try (LiveSession english = new LiveSession("english", live.openAi(), englishBot, bridge, hub, () -> true,
+                englishSocket::connect, Duration.ofMillis(20))) {
+            english.open();
+            english.startInitialGreeting(englishBot.initialGreeting());
+            english.startInitialGreeting("duplicate");
+            check(englishSocket.sent.getFirst().getAsJsonObject("session").get("instructions").getAsString()
+                    .startsWith(englishBot.systemInstructions()), "configured English policy preserved");
+            String content = englishSocket.sent.getLast().get("content").getAsString();
+            check(content.endsWith(englishBot.initialGreeting()) && !content.contains("日本語で"),
+                    "English greeting is never instructed to speak Japanese");
+            check(englishSocket.count("session.instructions.append") == 1, "English greeting sent once");
+        }
+
         check(session.appendInputAudio(new AudioFrame("live", AudioFrame.Direction.INBOUND, 1, new byte[320], "pcm16", 8000, 20, Instant.now())), "input accepted");
         check(Base64.getDecoder().decode(fake.sent.getLast().get("audio").getAsString()).length == 960, "input resampled");
         fake.emit("{\"type\":\"session.usage.updated\",\"usage\":{\"seconds\":12}}");

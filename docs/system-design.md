@@ -240,7 +240,7 @@ Liveは通話終了まで接続を保持し、Realtimeの15秒idle closeは適�
 
 今回のLive backendは音声会話のみを扱い、Responses backendや業務toolへ接続しない。APIではdelegation省略時もclientモードになるが、アプリは委譲処理を実行しない。instructionsで委譲・検索・操作を行わない方針を指定し、想定外の`session.delegation.created`には、この窓口では実行できない旨だけを返す。
 
-初回挨拶は`session.started`後に`session.instructions.append`で要求する。LiveへRealtimeのVAD、`response.create`、`response.cancel`は送らない。AI送話中も利用者音声を送るため、Liveスロットには`dropInputAudioWhileAssistantSpeaking`と従来barge-in閾値を適用しない。短い相づちだけでoutbound queueを破棄する処理も入れない。
+初回挨拶は`session.started`後に`session.instructions.append`で要求する。挨拶の言語は`bot.systemInstructions`の会話言語方針に従わせ、`bot.initialGreeting`の本文をそのまま渡す。Gatewayから「日本語で」と固定指定しない。LiveへRealtimeのVAD、`response.create`、`response.cancel`は送らない。AI送話中も利用者音声を送るため、Liveスロットには`dropInputAudioWhileAssistantSpeaking`と従来barge-in閾値を適用しない。短い相づちだけでoutbound queueを破棄する処理も入れない。
 
 ### transcriptとモニター
 
